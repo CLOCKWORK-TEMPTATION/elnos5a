@@ -1,0 +1,14 @@
+/* Unified stylesheet entrypoint (single import target from main.tsx)
+   Source of truth:
+   1) globals.css => tokens + base
+   2) main.css => app host reset
+   3) page.css => screenplay page/layout
+   4) ui-kit.css => optional UI effects/utilities
+   5) toolbar.css + shell.css => legacy compatibility layer
+*/
+@import "./globals.css";
+@import "./main.css";
+@import "./page.css";
+@import "./ui-kit.css";
+@import "./toolbar.css";
+@import "./shell.css";

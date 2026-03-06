@@ -1,0 +1,32 @@
+/* Source-of-truth note:
+   tokens/fonts are defined once in globals.css.
+   this file keeps only layout/reset glue for the app shell host.
+*/
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html {
+  font-size: 16px;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+body {
+  font-family: var(--font-family-ui);
+  background-color: var(--background, var(--color-bg));
+  color: var(--foreground, var(--color-text));
+  direction: rtl;
+  min-height: 100vh;
+  overflow-x: hidden;
+}
+
+#app {
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+}

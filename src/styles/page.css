@@ -1,0 +1,444 @@
+/* ===================================
+   منطقة التحرير والصفحة
+   =================================== */
+.editor-area {
+  flex-grow: 1;
+  display: flex;
+  justify-content: center;
+  padding: 30px 20px 60px;
+  overflow-y: auto;
+}
+
+/* ===================================
+   ورقة السيناريو (الصفحة)
+   =================================== */
+.screenplay-sheet {
+  width: var(--page-width) !important;
+  min-height: var(--page-height);
+  background-color: var(--color-page-bg);
+  box-shadow: var(--shadow-page);
+  display: block !important;
+  position: relative;
+  overflow: visible !important;
+  margin: 0 auto !important;
+  border-radius: 0 !important;
+  padding: 0 !important;
+}
+
+.screenplay-sheet.filmlane-sheet-paged {
+  height: auto !important;
+  min-height: var(--page-height);
+}
+
+.screenplay-sheet__body {
+  width: 100%;
+  padding: 0 !important;
+  outline: none;
+  font-family: var(
+    --editor-font-family,
+    "AzarMehrMonospaced-San",
+    "Noto Naskh Arabic",
+    "Amiri",
+    "Traditional Arabic",
+    monospace
+  ) !important;
+  font-size: var(--editor-font-size, 10pt);
+  line-height: var(--editor-line-height, 15pt);
+  direction: rtl;
+  color: black;
+  white-space: pre-wrap;
+  box-sizing: border-box;
+  user-select: text !important;
+  -webkit-user-select: text !important;
+  -moz-user-select: text !important;
+  cursor: text;
+  overflow-wrap: break-word;
+  word-wrap: break-word;
+  font-weight: normal;
+}
+
+.screenplay-sheet__body .ProseMirror,
+.screenplay-sheet__body [data-tiptap-pagination],
+.screenplay-sheet__body .tiptap-page-header,
+.screenplay-sheet__body .tiptap-page-footer,
+.screenplay-sheet__body .tiptap-page {
+  font-family: var(
+    --editor-font-family,
+    "AzarMehrMonospaced-San",
+    "Noto Naskh Arabic",
+    "Amiri",
+    "Traditional Arabic",
+    monospace
+  ) !important;
+  font-size: var(--editor-font-size, 13pt) !important;
+  line-height: var(--editor-line-height, 15pt) !important;
+}
+
+/* Keep horizontal margins applied exactly once on the pagination root. */
+.screenplay-sheet__body .ProseMirror {
+  box-sizing: border-box;
+  margin: 0 auto !important;
+  padding: 0 var(--page-margin-right) 0 var(--page-margin-left) !important;
+}
+
+.screenplay-sheet__body [data-tiptap-pagination] {
+  margin: 0 !important;
+  padding: 0 !important;
+}
+
+.screenplay-sheet__body .tiptap-page-header,
+.screenplay-sheet__body .tiptap-page-footer {
+  pointer-events: none;
+}
+
+.screenplay-sheet__body .tiptap-page-header {
+  min-height: var(--page-header-height) !important;
+  height: var(--page-header-height) !important;
+  box-sizing: border-box;
+}
+
+.screenplay-sheet__body .filmlane-pages-header-spacer-v2 {
+  min-height: var(--page-header-height) !important;
+  height: var(--page-header-height) !important;
+  width: 100%;
+  display: block;
+  box-sizing: border-box;
+}
+
+.screenplay-sheet__body .filmlane-pages-footer-spacer {
+  min-height: var(--page-footer-height) !important;
+  height: var(--page-footer-height) !important;
+  width: 100%;
+  display: flex;
+  align-items: flex-end;
+  direction: ltr;
+  justify-content: flex-start;
+  padding-left: var(--page-margin-left);
+  box-sizing: border-box;
+}
+
+.screenplay-sheet__body .tiptap-page-footer {
+  min-height: var(--page-footer-height) !important;
+  height: var(--page-footer-height) !important;
+  direction: ltr !important;
+  justify-content: flex-start !important;
+  text-align: left !important;
+}
+
+.screenplay-sheet__body .tiptap-page-footer p,
+.screenplay-sheet__body .tiptap-page-footer .tiptap-page-footer-left,
+.screenplay-sheet__body .tiptap-page-footer .tiptap-page-number {
+  direction: ltr !important;
+  text-align: left !important;
+}
+
+.screenplay-sheet__body .tiptap-page-footer .tiptap-page-number {
+  margin-left: var(--page-margin-left) !important;
+  margin-right: auto !important;
+}
+
+.screenplay-sheet__body .filmlane-pages-footer-number {
+  direction: ltr;
+  text-align: left;
+  margin: 0;
+  font-size: 13pt;
+  color: rgba(0, 0, 0, 0.82);
+}
+
+/* ===================================
+   أنماط عناصر السيناريو
+   =================================== */
+
+/* البسملة (Basmala) */
+.screenplay-basmala {
+  text-align: left;
+  direction: rtl;
+  width: 100%;
+  font-weight: bold;
+  margin: var(--fmt-basmala-margin, 0);
+  min-height: var(--editor-line-height, 15pt);
+  line-height: var(--editor-line-height, 15pt);
+  padding: var(--fmt-basmala-padding, 0);
+}
+
+/* خط رأس المشهد العلوي - التجميع البصري */
+/* يعرض scene_header_1 و scene_header_2 على نفس السطر */
+.screenplay-scene_header_top_line {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  width: 100%;
+  font-weight: normal;
+  margin-top: var(--fmt-scene_header_top_line-margin-top, 0);
+  padding: var(--fmt-scene_header_top_line-padding, 0);
+  min-height: var(--editor-line-height, 15pt);
+  line-height: var(--editor-line-height, 15pt);
+}
+
+.screenplay-scene_header_1 {
+  flex: 0 0 auto;
+  font-weight: normal;
+  min-height: var(--editor-line-height, 15pt);
+  line-height: var(--editor-line-height, 15pt);
+  padding: 0;
+  margin: 0;
+}
+
+.screenplay-scene_header_2 {
+  flex: 0 0 auto;
+  font-weight: normal;
+  min-height: var(--editor-line-height, 15pt);
+  line-height: var(--editor-line-height, 15pt);
+  padding: 0;
+  margin: 0;
+}
+
+.screenplay-scene_header_3 {
+  text-align: center;
+  font-weight: normal;
+  min-height: var(--editor-line-height, 15pt);
+  line-height: var(--editor-line-height, 15pt);
+  padding: var(--fmt-scene_header_3-padding, 0);
+  margin-bottom: var(--fmt-scene_header_3-margin-bottom, 0);
+}
+
+/* الوصف / الحركة (Action) */
+.screenplay-action {
+  width: 100%;
+  margin: var(--fmt-action-margin, 0);
+  min-height: var(--editor-line-height, 15pt);
+  line-height: var(--editor-line-height, 15pt);
+  padding: var(--fmt-action-padding, 0);
+  font-weight: normal;
+}
+
+/*
+ * افتراضياً: action يكون مبرّرًا مثل Filmlane.
+ * عند تطبيق محاذاة من شريط الأدوات (Tiptap يضيف style="text-align: ..."),
+ * لا نفرض text-align-last حتى لا نكسر left/center/right.
+ */
+.screenplay-action:not([style*="text-align"]) {
+  text-align: justify;
+  text-align-last: right;
+  text-justify: inter-word;
+}
+
+/* اسم الشخصية (Character) */
+.screenplay-character {
+  width: 4.1in;
+  text-align: center;
+  margin: var(--fmt-character-margin, 0 auto);
+  min-height: var(--editor-line-height, 15pt);
+  line-height: var(--editor-line-height, 15pt);
+  padding: var(--fmt-character-padding, 0);
+  font-weight: normal;
+  /* Keep character cue attached to the next speech line across page boundaries. */
+  break-after: avoid-page;
+  page-break-after: avoid;
+}
+
+.screenplay-character + .screenplay-dialogue,
+.screenplay-character + .screenplay-parenthetical {
+  break-before: avoid-page;
+  page-break-before: avoid;
+}
+
+/* تعليمات الحوار (Parenthetical) */
+.screenplay-parenthetical {
+  text-align: center;
+  margin: var(--fmt-parenthetical-margin, 0 auto);
+  min-height: var(--editor-line-height, 15pt);
+  line-height: var(--editor-line-height, 15pt);
+  padding: var(--fmt-parenthetical-padding, 0);
+  font-weight: normal;
+}
+
+/* الحوار (Dialogue) */
+.screenplay-dialogue {
+  width: var(--fmt-dialogue-width, 4.1in);
+  text-align: center;
+  margin: var(--fmt-dialogue-margin, 0 auto);
+  font-weight: normal;
+  padding-left: var(--fmt-dialogue-padding-left, 1.5em);
+  padding-right: var(--fmt-dialogue-padding-right, 1em);
+  padding-top: var(--fmt-dialogue-padding-top, 0.25em);
+  padding-bottom: var(--fmt-dialogue-padding-bottom, 0);
+  min-height: var(--editor-line-height, 15pt);
+  line-height: var(--editor-line-height, 15pt);
+}
+
+/* الانتقال (Transition) */
+.screenplay-transition {
+  text-align: center;
+  margin: var(--fmt-transition-margin, 0 auto);
+  font-weight: bold;
+  min-height: var(--editor-line-height, 15pt);
+  line-height: var(--editor-line-height, 15pt);
+  padding: var(--fmt-transition-padding, 0);
+}
+
+/* ===================================
+   قواعد التباعد بين العناصر (1:1)
+   =================================== */
+
+/* أول عنصر لا يعلوه فراغ إضافي */
+.screenplay-sheet__body .ProseMirror [data-type]:first-child {
+  margin-top: 0 !important;
+}
+
+/* basmala -> أي عنصر: 0 */
+.screenplay-basmala + [data-type] {
+  margin-top: 0 !important;
+}
+
+/* basmala -> scene_header_top_line: 13pt (استثناء) */
+.screenplay-basmala + .screenplay-scene_header_top_line {
+  margin-top: 13pt !important;
+}
+
+/* character -> dialogue/parenthetical: 0 */
+.screenplay-character + .screenplay-dialogue,
+.screenplay-character + .screenplay-parenthetical {
+  margin-top: 0 !important;
+}
+
+/* parenthetical -> dialogue: 0 */
+.screenplay-parenthetical + .screenplay-dialogue {
+  margin-top: 0 !important;
+}
+
+/* scene_header_2 -> scene_header_3 (ممثلة بسطر top-line السابق): 0 */
+.screenplay-scene_header_top_line + .screenplay-scene_header_3 {
+  margin-top: 0 !important;
+}
+
+/* scene_header_3 -> action: 13pt */
+.screenplay-scene_header_3 + .screenplay-action {
+  margin-top: 13pt !important;
+}
+
+/* action -> action/character/transition: 13pt */
+.screenplay-action + .screenplay-action,
+.screenplay-action + .screenplay-character,
+.screenplay-action + .screenplay-transition {
+  margin-top: 13pt !important;
+}
+
+/* dialogue -> character/action/transition: 13pt */
+.screenplay-dialogue + .screenplay-character,
+.screenplay-dialogue + .screenplay-action,
+.screenplay-dialogue + .screenplay-transition {
+  margin-top: 13pt !important;
+}
+
+/* parenthetical -> character/action/transition: 0 */
+.screenplay-parenthetical + .screenplay-character,
+.screenplay-parenthetical + .screenplay-action,
+.screenplay-parenthetical + .screenplay-transition {
+  margin-top: 0 !important;
+}
+
+/* transition -> scene_header_1/scene_header_top_line: 13pt */
+.screenplay-transition + .screenplay-scene_header_top_line,
+.screenplay-transition + .screenplay-scene_header_1 {
+  margin-top: 13pt !important;
+}
+
+/* ===================================
+   أنماط المحرر (Tiptap)
+   =================================== */
+
+/* إزالة الحدود الافتراضية */
+.tiptap {
+  outline: none !important;
+  border: none !important;
+}
+
+.tiptap:focus {
+  outline: none !important;
+}
+
+/* مؤشر المكان الفارغ (Placeholder) */
+.tiptap .is-empty::before {
+  content: attr(data-placeholder);
+  color: #aaaaaa;
+  pointer-events: none;
+  float: right;
+  height: 0;
+  font-style: italic;
+}
+
+/* تنسيق النص المحدد */
+.tiptap ::selection {
+  background-color: rgba(0, 130, 213, 0.2);
+}
+
+/* تأثير العنصر النشط */
+.tiptap .has-focus {
+  background-color: var(--color-active-element-bg);
+  border-radius: 2px;
+}
+
+/* معاينة الطباعة */
+@page {
+  size: A4 portrait;
+  margin: 0;
+}
+
+@media print {
+  html,
+  body {
+    background: white !important;
+    margin: 0 !important;
+    padding: 0 !important;
+  }
+
+  .app-bg-grid,
+  .app-header,
+  .app-sidebar,
+  .app-dock,
+  .app-footer,
+  .toolbar,
+  .sr-only {
+    display: none !important;
+  }
+
+  .app-root,
+  .app-main,
+  .app-editor-main,
+  .app-editor-scroll,
+  .app-editor-shell,
+  .app-editor-host,
+  .editor-area {
+    display: block !important;
+    height: auto !important;
+    min-height: 0 !important;
+    overflow: visible !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    background: white !important;
+  }
+
+  .screenplay-sheet {
+    box-shadow: none !important;
+    border: none !important;
+    border-radius: 0 !important;
+    width: var(--page-width) !important;
+    margin: 0 auto !important;
+  }
+
+  .screenplay-sheet__body {
+    padding: 0 !important;
+  }
+
+  .screenplay-sheet__body .ProseMirror {
+    margin: 0 auto !important;
+    padding: 0 var(--page-margin-right) 0 var(--page-margin-left) !important;
+  }
+
+  .screenplay-sheet__body [data-tiptap-pagination],
+  .screenplay-sheet__body .tiptap-page {
+    margin: 0 !important;
+    padding: 0 !important;
+  }
+}

@@ -1,0 +1,251 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ============================================
+   FONTS
+   ============================================ */
+@font-face {
+  font-family: "AzarMehrMonospaced-San";
+  src: url("../../fonts/AzarMehrMonospaced_Sans_Regular.ttf") format("truetype");
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "AzarMehrMonospaced-San";
+  src: url("../../fonts/AzarMehrMonospaced_Sans_Bold.ttf") format("truetype");
+  font-weight: 700;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "Cairo";
+  src: url("../../fonts/Cairo-VariableFont_slnt,wght.ttf") format("truetype");
+  font-weight: 100 900;
+  font-style: normal;
+  font-display: swap;
+}
+
+/* ============================================
+   DESIGN SYSTEM "aminof" — Dark Only
+   ============================================ */
+
+@layer base {
+  :root {
+    /* === Core Color Tokens (Dark Only - oklch) === */
+    --background: oklch(0.145 0 0);
+    --foreground: oklch(0.985 0 0);
+    --card: oklch(0.205 0 0);
+    --card-foreground: oklch(0.985 0 0);
+    --popover: oklch(0.269 0 0);
+    --popover-foreground: oklch(0.985 0 0);
+    --primary: oklch(0.985 0 0);
+    --primary-foreground: oklch(0.205 0 0);
+    --secondary: oklch(0.269 0 0);
+    --secondary-foreground: oklch(0.985 0 0);
+    --muted: oklch(0.269 0 0);
+    --muted-foreground: oklch(0.708 0 0);
+    --accent: oklch(0.371 0 0);
+    --accent-foreground: oklch(0.985 0 0);
+    --destructive: oklch(0.704 0.191 22.216);
+    --destructive-foreground: oklch(0.985 0 0);
+    --border: oklch(0.275 0 0);
+    --input: oklch(0.325 0 0);
+    --ring: oklch(0.556 0 0);
+
+    /* === Sidebar Colors === */
+    --sidebar: oklch(0.205 0 0);
+    --sidebar-foreground: oklch(0.985 0 0);
+    --sidebar-primary: oklch(0.985 0 0);
+    --sidebar-primary-foreground: oklch(0.205 0 0);
+    --sidebar-accent: oklch(0.269 0 0);
+    --sidebar-accent-foreground: oklch(0.985 0 0);
+    --sidebar-border: oklch(0.275 0 0);
+    --sidebar-ring: oklch(0.556 0 0);
+
+    /* === Chart Colors === */
+    --chart-1: oklch(0.646 0.222 41.116);
+    --chart-2: oklch(0.6 0.118 184.714);
+    --chart-3: oklch(0.398 0 0);
+    --chart-4: oklch(0.828 0.189 84.429);
+    --chart-5: oklch(0.769 0.188 70.08);
+
+    /* === Brand Accent (Teal - for toolbar/UI highlights) === */
+    --brand: #029784;
+    --brand-foreground: #ffffff;
+    --brand-teal: #40a5b3;
+    --brand-bronze: #746842;
+
+    /* === Extended Semantic Tokens === */
+    --accent-creative: oklch(0.75 0.18 330);
+    --accent-technical: oklch(0.7 0.12 195);
+    --accent-success: oklch(0.75 0.18 140);
+    --accent-warning: oklch(0.8 0.18 80);
+    --accent-error: oklch(0.65 0.22 25);
+    --gradient-start: var(--brand);
+    --gradient-middle: var(--brand-teal);
+    --gradient-end: var(--brand-bronze);
+    --view-transition-duration: 0.3s;
+
+    /* === App Runtime Fallbacks (can be overridden from App.tsx) === */
+    --filmlane-brand-gradient: linear-gradient(
+      135deg,
+      var(--brand),
+      var(--brand-teal),
+      var(--brand-bronze)
+    );
+    --filmlane-brand-gradient-soft: linear-gradient(
+      135deg,
+      var(--brand),
+      var(--brand-teal)
+    );
+    --filmlane-highlight-primary: color-mix(in oklch, var(--brand) 65%, white);
+    --filmlane-highlight-secondary: color-mix(
+      in oklch,
+      var(--brand-teal) 65%,
+      white
+    );
+    --filmlane-palette-dark: #060808;
+
+    /* === Border Radius === */
+    --radius: 0.625rem;
+    --radius-sm: calc(var(--radius) - 4px);
+    --radius-md: calc(var(--radius) - 2px);
+    --radius-lg: var(--radius);
+    --radius-xl: calc(var(--radius) + 4px);
+
+    /* === Spacing Scale (8px base) === */
+    --space-1: 0.25rem;
+    --space-2: 0.5rem;
+    --space-3: 0.75rem;
+    --space-4: 1rem;
+    --space-5: 1.5rem;
+    --space-6: 2rem;
+    --space-8: 3rem;
+    --space-10: 4rem;
+    --space-12: 6rem;
+
+    /* === Typography Scale === */
+    --text-xs: 0.64rem;
+    --text-sm: 0.8rem;
+    --text-base: 1rem;
+    --text-lg: 1.25rem;
+    --text-xl: 1.563rem;
+    --text-2xl: 1.953rem;
+    --text-3xl: 2.441rem;
+    --text-4xl: 3.052rem;
+
+    --font-weight-medium: 500;
+    --font-weight-normal: 400;
+
+    /* === Animation Timing === */
+    --duration-fast: 150ms;
+    --duration-normal: 300ms;
+    --duration-slow: 500ms;
+    --easing-default: cubic-bezier(0.4, 0, 0.2, 1);
+    --easing-spring: cubic-bezier(0.175, 0.885, 0.32, 1.275);
+
+    /* === Font Families === */
+    --font-family-ui: "Cairo", system-ui, -apple-system, sans-serif;
+    --font-family-editor: "AzarMehrMonospaced-San", monospace;
+
+    /* === Page Metrics === */
+    --page-height: 1123px;
+    --page-width: 794px;
+    --page-header-height: 0.8in;
+    --page-footer-height: 0.8in;
+    --page-margin-left: 1in;
+    --page-margin-right: 1.25in;
+
+    /* === Legacy Aliases (kept for page.css/toolbar.css compatibility) === */
+    --color-bg: var(--background);
+    --color-page-bg: #ffffff;
+    --color-text: #1a1a1a;
+    --color-toolbar-bg: #2c2c2c;
+    --color-toolbar-text: #e0e0e0;
+    --color-toolbar-hover: #444444;
+    --color-toolbar-active: #0078d4;
+    --color-border: #d0d0d0;
+    --color-scene-heading: #1a5276;
+    --color-character: #6c3483;
+    --color-transition: #7d6608;
+    --color-parenthetical: #555555;
+    --color-active-element-bg: rgba(0, 120, 212, 0.06);
+    --shadow-page: 0 2px 12px rgba(0, 0, 0, 0.15);
+    --shadow-toolbar: 0 2px 8px rgba(0, 0, 0, 0.3);
+  }
+}
+
+/* ============================================
+   BASE STYLES
+   ============================================ */
+
+@layer base {
+  :root {
+    --font-family: var(--font-family-ui);
+    font-size: 16px;
+  }
+
+  * {
+    border-color: var(--border);
+    font-family: var(--font-family);
+  }
+
+  body {
+    background-color: var(--background);
+    color: var(--foreground);
+    font-family: var(--font-family);
+  }
+
+  h1 {
+    font-size: var(--text-2xl);
+    font-weight: var(--font-weight-medium);
+    line-height: 1.5;
+    font-family: var(--font-family);
+  }
+  h2 {
+    font-size: var(--text-xl);
+    font-weight: var(--font-weight-medium);
+    line-height: 1.5;
+    font-family: var(--font-family);
+  }
+  h3 {
+    font-size: var(--text-lg);
+    font-weight: var(--font-weight-medium);
+    line-height: 1.5;
+    font-family: var(--font-family);
+  }
+  h4 {
+    font-size: var(--text-base);
+    font-weight: var(--font-weight-medium);
+    line-height: 1.5;
+    font-family: var(--font-family);
+  }
+
+  label {
+    font-size: var(--text-base);
+    font-weight: var(--font-weight-medium);
+    line-height: 1.5;
+  }
+  button {
+    font-size: var(--text-base);
+    font-weight: var(--font-weight-medium);
+    line-height: 1.5;
+    font-family: var(--font-family);
+  }
+  input {
+    font-size: var(--text-base);
+    font-weight: var(--font-weight-normal);
+    line-height: 1.5;
+    font-family: var(--font-family);
+  }
+}
+
+/* Source-of-truth policy:
+   - Tokens and base reset live in this file.
+   - Screenplay layout/style rules live in page.css.
+   - UI utilities and rich effects live in ui-kit.css.
+*/

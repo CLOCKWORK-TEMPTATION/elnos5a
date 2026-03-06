@@ -1,0 +1,401 @@
+## 1) القاعدة الحاكمة (4.2) — إلزامية على مستوى التصميم والتنفيذ
+
+**التحليل لا يعتمد على LLM وحده.** يجب أن يرتكز أولًا على **أدلة تحليل ساكن** (AST/Type Graph/Import Graph/Call Graph/Tooling)، ثم يأتي دور النموذج في **التحكيم وصياغة الخطة وتنفيذ الباتشات**.
+تطبيقًا لذلك: أي حذف/دمج/نقل/توحيد **يُمنع** ما لم يكن معه **Evidence Packet** واضح (أدلة + درجة ثقة + مخاطر + نقاط دخول).
+
+---
+
+## 2) مزودو النماذج المناسبون (Providers) + أمثلة نماذج عملية
+
+> الهدف هنا: تزويدك بـ “أسماء مزودين” + “عائلات نماذج مناسبة” لثلاث فئات: **التخطيط/التحكيم**، **توليد/تعديل الكود**، **التلخيص**.
+> يمكنك تشغيل أكثر من مزود معًا حسب الدور (Multi-Provider).
+
+### 2.1 مزودون مغلقون (Cloud APIs)
+
+| المزود                          | لماذا مناسب هنا                                                  | أمثلة نماذج/عائلات                                                       |
+| ------------------------------- | ---------------------------------------------------------------- | ------------------------------------------------------------------------ |
+| **OpenAI**                      | قوي جدًا في كتابة باتشات طويلة الأفق + سياق ضخم                  | عائلة Codex لـ agentic coding مثل GPT-5.x-Codex ([OpenAI Developers][1]) |
+| **Anthropic**                   | ممتاز في التحكيم، التخطيط، والقرارات المعمارية مع حساسية للمخاطر | عائلة Claude (Opus/… حسب المتاح) ([Claude API Docs][2])                  |
+| **Google (Gemini / Vertex AI)** | قوي في التحليل العام + إدارة إصدارات/دورات حياة نماذج مؤسسية     | نماذج Gemini عبر Gemini API وVertex AI ([Google AI for Developers][3])   |
+| **Mistral AI**                  | بديل قوي؛ خيارات نشر وتكاملات متنوعة                             | قائمة نماذج Mistral ([Mistral AI][4])                                    |
+| **xAI (Grok)**                  | خيار إضافي، خاصة إذا أردت مزودًا آخر بقدرات reasoning            | Grok models ([xAI][5])                                                   |
+| **DeepSeek (API)**              | خيار اقتصادي/بديل؛ API متوافق بصيغة قريبة من OpenAI              | DeepSeek API docs/models ([DeepSeek API Docs][6])                        |
+
+### 2.2 خيارات “مفتوحة الأوزان” (Self-host / Local)
+
+| المصدر                           | لماذا مهم هنا                                  | أمثلة                               |
+| -------------------------------- | ---------------------------------------------- | ----------------------------------- |
+| **Meta Llama**                   | تشغيل محلي/على خوادمك، سيطرة أعلى على البيانات | وثائق/نماذج Llama ([AI Meta][7])    |
+| **Qwen (Alibaba / Open Models)** | أداء قوي في البرمجة/الاستدلال + توفر واسع      | مستودعات/إصدارات Qwen ([GitHub][8]) |
+
+---
+
+## 3) الفريق (Agents) — نسخة محسّنة لـ TypeScript/Node
+
+### 3.1 العدد المقترح: 12 وكيلًا (مع “حارس الأدلة”)
+
+| الوكيل                                             | المخرجات الأساسية                                    |
+| -------------------------------------------------- | ---------------------------------------------------- |
+| 1) **Intake Agent**                                | `repo_profile.json`                                  |
+| 2) **TS Stack Profiler** (TypeScript/Node متخصص)   | `stack_fingerprint.json`                             |
+| 3) **Indexer / Symbol DB Builder**                 | `symbol_index.sqlite`                                |
+| 4) **Graph Builder** (Import/Call/Type graph)      | `graphs/*.json`                                      |
+| 5) **Dead-Code Hunter**                            | `dead_code_candidates.json`                          |
+| 6) **Semantic Clone Clustering Agent** (7.1)       | `semantic_clone_clusters.json`                       |
+| 7) **Duplicate API & Function Agent**              | `duplicate_functions.json`                           |
+| 8) **Boundaries & Merge Candidate Agent** (7.5)    | `merge_candidates.json` + `boundary_violations.json` |
+| 9) **Contract Miner Agent** (7.4)                  | `contracts.json`                                     |
+| 10) **Risk Scorer Agent** (7.3)                    | `risk_scores.json`                                   |
+| 11) **Refactor Planner / Report Writer**           | `refactor_plan.json` + `report.md`                   |
+| 12) **Evidence Gatekeeper** (حارس 4.2)             | يرفض أي خطوة بلا Evidence Packet                     |
+| 13) **Patch Author (Coding Model)**                | `patch_series/` + commits                            |
+| 14) **Behavioral Equivalence Harness Agent** (7.2) | `harness/` + `equivalence_report.json`               |
+| 15) **Verifier & QA Agent**                        | `verification_report.json`                           |
+
+> عمليًا يمكن تنفيذ (12) كطبقة سياسات داخل الـ Orchestrator بدل وكيل مستقل، لكن وجوده ككيان صريح يقلل “تجاوزات” LLM.
+
+---
+
+## 4) أدوات التحليل الساكن (Tooling) — عمود النظام الفقري
+
+### 4.1 أساسي (إلزامي)
+
+* **TypeScript Compiler API / tsserver** (لبناء AST/Types/Refs)
+* **ts-morph** لتسهيل عمليات AST وعمليات إعادة كتابة آمنة
+* **ESLint** + قواعد unused + boundaries (منع دمج يكسر الطبقات)
+* **Typecheck**: `tsc --noEmit`
+* **Dependency Graph**: `dependency-cruiser` أو `madge`
+* **Unused exports/files**: `knip` + `depcheck` (ممتازة في Node/TS)
+* **Clone detection**: `jscpd` (نصي/توكن) + طبقة clustering بنيوي (7.1)
+
+### 4.2 طبقة “الدليل” Evidence Packet (إلزامية قبل أي تعديل)
+
+كل Candidate (حذف/دمج/توحيد) يجب أن يحمل:
+
+* **Graph Evidence**: لا inbound imports / لا callsites / ليس entrypoint
+* **TS Evidence**: لا symbol references (أو references ضمن tests فقط)
+* **Tool Evidence**: knip/depcheck/jscpd hits
+* **Risk Evidence**: درجة مخاطرة محسوبة (7.3)
+* **Exception Flags**: dynamic import / reflection / side-effects suspicion
+
+---
+
+## 5) “النواقص” التي يجب إدخالها كنقاط رسمية داخل الخطة (إضافتها إلزامي)
+
+### 5.1 تعريف نقاط الدخول Entry Points بدقة
+
+* استخراجها تلقائيًا من:
+
+  * `package.json` (`main`, `exports`, `bin`, `types`)
+  * configs: `tsconfig`, `vite`, `next`, `jest/vitest`
+  * مسارات تشغيل CLI/Server
+* تصنيفها إلى:
+
+  * `runtime_entrypoints`
+  * `test_entrypoints`
+  * `tooling_entrypoints`
+
+### 5.2 استثناءات الكود الديناميكي (Dynamic/Reflective)
+
+* قواعد “خفض الثقة” بدل الحذف:
+
+  * dynamic import strings
+  * plugin registries
+  * event names كسلاسل
+  * DI containers / decorators
+* أي candidate داخل “منطقة ديناميكية” يتحول إلى:
+
+  * `risk = high`
+  * `action = propose_only` (لا تنفيذ) إلا إذا وُجد Evidence إضافي قوي
+
+### 5.3 معيار الدليل (Evidence Threshold)
+
+* **لا حذف** إلا إذا تحققت شروط متزامنة مثل:
+
+  * لا inbound imports (بالرسوم)
+  * لا symbol references (بالـ TS)
+  * ليس ضمن `exports` العامة
+  * ليس ضمن entrypoints
+* عند التعارض بين الأدوات: يُرفع للـ Planner مع “سبب التعارض” بدل اتخاذ قرار تلقائي.
+
+### 5.4 حماية الـ Public API
+
+* أي تغيير يمس:
+
+  * `exports` في `package.json`
+  * ملفات `index.ts` العامة
+  * أنواع TypeScript المصدّرة
+    يُعلّم: `public_api_impact=true` ويأخذ مخاطرة أعلى.
+
+### 5.5 باتشات ذرّية + قابلية العكس
+
+* كل باتش:
+
+  * نطاق صغير
+  * commit مستقل
+  * تحقق سريع بعده
+* سياسة توقف:
+
+  * إذا فشل تحقق باتش → rollback → إعادة تخطيط تلقائيًا.
+
+### 5.6 حارس التنسيق والضوضاء
+
+* تشغيل formatter/linter لتقليل diff noise:
+
+  * `prettier --write`
+  * `eslint --fix`
+* منع تغييرات تنسيق واسعة في نفس باتش منطقي.
+
+### 5.7 كاشف “انفجار نطاق التغيير”
+
+* إذا زاد عدد الملفات/الأسطر المعدّلة عن حدود الخطة:
+
+  * توقف آلي
+  * إعادة تخطيط
+  * تقرير “سبب الانفجار” (مثل: استخراج util أثّر على عشرات الملفات).
+
+---
+
+## 6) إدراج 7.1–7.5 كنظم فعلية داخل الـ Pipeline
+
+### 7.1 Semantic Clone Clustering (تكرارات “بالمعنى” لا بالنص)
+
+**الفكرة التنفيذية في TS:**
+
+1. التطبيع Normalization:
+
+   * إزالة أسماء المتغيرات (alpha-renaming)
+   * تطبيع literals (استبدالها placeholders)
+   * تطبيع ترتيب بعض البُنى إن أمكن
+2. استخراج “بصمة بنيوية” لكل مقطع:
+
+   * AST subtree hashing
+3. التجميع:
+
+   * clustering حسب hash + تشابه هيكلي
+4. مخرجات:
+
+   * Cluster مع “مقترح refactor”: Extract Function / Extract Module / Strategy
+
+**إدخالها في الخطة:**
+
+* لا تُحوّل التكرار إلى دمج تلقائي إلا بعد:
+
+  * Risk scoring
+  * Contracts (7.4)
+  * Harness (7.2) عند الحاجة
+
+### 7.2 Behavioral Equivalence Harness (حزام أمان سلوكي)
+
+يُفعّل تلقائيًا عندما:
+
+* الاختبارات ضعيفة/غير موجودة
+* أو مخاطرة التغيير عالية
+
+**أدوات داخل Node/TS:**
+
+* توليد اختبارات:
+
+  * Snapshot tests (مخرجات JSON/Strings)
+  * Golden files لمخرجات parsers
+  * Property-based tests (إن كانت الدوال نقية)
+* “تشغيل تفاضلي”:
+
+  * تشغيل قبل/بعد لنفس المدخلات
+  * مقارنة المخرجات
+* مخرجات:
+
+  * `equivalence_report.json` يحدد:
+
+    * متطابق / اختلاف / اختلاف مقبول (وفق contract)
+
+### 7.3 Risk-Scored Refactor (ريفكتور بدرجات مخاطرة)
+
+**صيغة مقترحة (قابلة للتعديل):**
+
+* `risk = w1*entrypoint_proximity + w2*fan_in + w3*public_api + w4*dynamic_suspicion + w5*test_coverage_inverse + w6*signature_change`
+
+**الاستخدام:**
+
+* ترتيب باتشات الخطة:
+
+  * Low → Medium → High
+* High risk:
+
+  * يفرض Harness (7.2)
+  * ويمنع “دمج واسع” في خطوة واحدة
+
+### 7.4 Refactor by Contracts (ريفكتور بالعقود)
+
+**استخراج العقد تلقائيًا من:**
+
+* TypeScript types (params/return/nullable)
+* استخدامات الاستدعاء (call sites)
+* JSDoc إن وجد
+* runtime guards إن وجدت (zod/io-ts/valibot)
+
+**تطبيق العقد:**
+
+* قبل تعديل دالة:
+
+  * توليد `contract_assertions` (أثناء الاختبارات/التطوير)
+* بعد التعديل:
+
+  * يجب ألا ينكسر العقد
+* العقد تُستخدم أيضًا لتحديد “الاختلاف المقبول” في Harness (7.2)
+
+### 7.5 Boundaries-Aware Merging (دمج واعٍ بالحدود المعمارية)
+
+**قواعد الدمج:**
+
+* لا دمج بين طبقات مختلفة إلا إذا:
+
+  * الخطة تتضمن إعادة ضبط boundaries صراحة
+  * وتوجد أدلة أن الدمج يقلل التعقيد ولا يخلق دوائر dependency
+* تنفيذ عبر:
+
+  * ESLint boundaries rules
+  * dependency-cruiser constraints
+* المخرجات:
+
+  * `boundary_violations.json` + اقتراحات إصلاح
+
+---
+
+## 7) مواصفة البيانات (Schemas) — جاهزة لتشغيل وكلاء بلا فوضى
+
+### 7.1 Evidence Packet (نواة 4.2)
+
+```json
+{
+  "id": "cand_001",
+  "kind": "dead_code | merge | dedupe | move | rename",
+  "target": { "file": "src/x.ts", "symbol": "foo", "range": [10, 42] },
+  "evidence": {
+    "importGraph": { "inboundCount": 0, "inboundFiles": [] },
+    "callGraph": { "callers": [] },
+    "tsReferences": { "refCount": 0, "refs": [] },
+    "toolHits": {
+      "knip": "unused-export",
+      "depcheck": null,
+      "jscpd": { "clusterId": "cl_07", "similarity": 0.92 }
+    }
+  },
+  "exceptions": {
+    "dynamicImportSuspicion": false,
+    "sideEffectModule": false,
+    "publicApiExposure": false
+  },
+  "risk": { "score": 18, "band": "low", "reasons": ["no inbound", "no refs"] },
+  "recommendedAction": "delete | extract | merge | unify | keep",
+  "requiresHarness": false
+}
+```
+
+### 7.2 Refactor Plan Step
+
+```json
+{
+  "stepId": "step_05",
+  "patchTitle": "Extract shared normalizeEmail util",
+  "actions": ["extract_function", "update_imports", "delete_duplicates"],
+  "targets": ["src/a.ts", "src/b.ts", "src/shared/normalizeEmail.ts"],
+  "preChecks": ["tsc_noEmit", "eslint"],
+  "postChecks": ["tsc_noEmit", "unit_tests_subset"],
+  "evidenceRefs": ["cand_014", "cand_015"],
+  "riskBand": "medium",
+  "rollbackStrategy": "git_revert_commit"
+}
+```
+
+---
+
+## 8) الـ Orchestrator (TypeScript) — تدفق عمل حتمي + بوابة موافقة
+
+### 8.1 العقدة الحاسمة: Approval Gate
+
+* قبل `Patch Author` يجب أن تكون:
+
+  * `approvalStatus = APPROVED`
+  * وإلا: لا يُنفّذ أي تعديل.
+
+### 8.2 قاعدة “حارس الأدلة”
+
+* أي Action لا يحمل `evidenceRefs[]` صحيحة → **رفض**.
+
+---
+
+## 9) Electron UI (واجهة محلية) — مواصفة تنفيذية
+
+### 9.1 هيكل التطبيق
+
+* **Main Process**
+
+  * إدارة اختيار repo
+  * تشغيل pipeline (Node child_process)
+  * إدارة SQLite artifacts
+  * IPC مع Renderer
+* **Renderer**
+
+  * صفحات: اختيار repo → baseline → التقرير → الموافقة → التنفيذ → النتائج
+* **IPC Channels (أمثلة)**
+
+  * `repo.select`
+  * `pipeline.start_scan`
+  * `pipeline.get_report`
+  * `approval.set_status`
+  * `refactor.execute`
+  * `artifacts.open_file_location`
+  * `logs.stream`
+
+### 9.2 تجربة المستخدم (UX) المطلوبة
+
+* عرض التقرير كمصفوفات قابلة للفلترة:
+
+  * Dead code / Duplicates / Semantic Clones / Merge candidates / Boundary issues
+* لكل عنصر:
+
+  * Evidence (روابط فتح الملفات على السطر)
+  * Risk band
+  * الإجراء المقترح
+* زر واحد للموافقة يبدأ التنفيذ.
+* زر “إيقاف طارئ” يوقف سلسلة الباتشات ويترك repo بحالة قابلة للاسترجاع.
+
+---
+
+## 10) خطة التنفيذ الفورية (بدون إشارات زمنية)
+
+1. إنشاء مشروع Electron (Main/Renderer) + مجلد `artifacts/` + SQLite.
+2. بناء “Analysis Engine” (Node/TS) كحزمة مستقلة تعمل CLI:
+
+   * `scan` → يولد findings + report
+   * `plan` → يولد plan steps
+   * `apply` → ينفذ patch series
+3. دمج أدوات التحليل:
+
+   * tsserver/ts-morph + ESLint + dependency-cruiser/madge + knip/depcheck + jscpd
+4. بناء Graphs + Symbol Index + Evidence Packets.
+5. إدخال 7.1:
+
+   * normalized AST hashing + clustering outputs.
+6. إدخال 7.4:
+
+   * Contract miner + حفظ `contracts.json`.
+7. إدخال 7.3:
+
+   * Risk scoring + ترتيب الباتشات.
+8. توليد التقرير `report.md` + `refactor_plan.json`.
+9. عرض التقرير داخل Electron + تفعيل Approval Gate.
+10. بعد الموافقة:
+
+* تنفيذ `apply` بباتشات ذرّية + تحقق بعد كل باتش + rollback عند الفشل.
+
+11. إدخال 7.2 عند الحاجة:
+
+* توليد Harness تلقائي للتغييرات عالية المخاطر أو عند ضعف الاختبارات.
+
+12. إدخال 7.5:
+
+* تشغيل boundaries checks قبل تنفيذ أي دمج عبر الطبقات.
+
+---

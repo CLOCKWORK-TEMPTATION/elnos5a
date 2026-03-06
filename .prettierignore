@@ -1,0 +1,6 @@
+.audit_results/
+ocr-arabic-pdf-to-txt/
+.uix/pubcmd.json
+pnpm-lock.yaml
+test-results/
+src/pipeline/unstructured/ومواصفة تنفيذ مباشرة.json
