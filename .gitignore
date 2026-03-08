@@ -140,8 +140,8 @@ build/
 # Ignore ds_store
 .DS_Store
 
-# Ignore Gemini temporary directory
-.gemini/tmp/
+# Ignore Gemini workspace
+.gemini/
 
 # Ignore npmrc (contains private registry configuration)
 .npmrc
@@ -230,3 +230,14 @@ node_modules/
 # Sample/test document files
 نسخ الملفات ال docanddocx/
 نسخ الملفات ال docanddocx/venv/
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+
+# Pipeline logs
+pipeline-log-*.txt
+
+# Root-level archives
+/*.zip
