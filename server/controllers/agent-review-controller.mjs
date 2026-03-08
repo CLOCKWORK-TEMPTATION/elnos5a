@@ -5,7 +5,7 @@
 import { randomUUID } from "crypto";
 import {
   AgentReviewValidationError,
-  requestAnthropicReview,
+  requestReview,
   validateAgentReviewRequestBody,
 } from "../agent-review.mjs";
 import { sendJson, readJsonBody } from "../utils/http-helpers.mjs";
@@ -18,7 +18,7 @@ export const handleAgentReview = async (req, res) => {
     importOpId =
       typeof rawBody?.importOpId === "string" ? rawBody.importOpId : null;
     const body = validateAgentReviewRequestBody(rawBody);
-    const response = await requestAnthropicReview(body);
+    const response = await requestReview(body);
     // إذا كان الـ provider رجع status code (529/503/429)، مرره للكلاينت
     // عشان يقدر يعمل retry صحيح
     const httpStatus =

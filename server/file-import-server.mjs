@@ -103,8 +103,6 @@ server.listen(PORT, HOST, () => {
     `ai-context:       http://${HOST}:${PORT}/api/ai/context-enhance`
   );
   // eslint-disable-next-line no-console
-  console.log(`ai-doubt:         http://${HOST}:${PORT}/api/ai/doubt-resolve`);
-  // eslint-disable-next-line no-console
   console.log(`health:           http://${HOST}:${PORT}/health`);
   if (FILE_IMPORT_PREFLIGHT_WARNINGS.length > 0) {
     console.warn("[antiword preflight] warnings:");

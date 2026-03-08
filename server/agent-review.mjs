@@ -1,59 +1,43 @@
 import { config } from "dotenv";
-import axios from "axios";
 import { randomUUID } from "crypto";
-import Anthropic from "@anthropic-ai/sdk";
+import { HumanMessage, SystemMessage } from "@langchain/core/messages";
 import pino from "pino";
-import { resolveAnthropicApiRuntime } from "./provider-api-runtime.mjs";
+import {
+  invokeWithFallback,
+  resolveProviderErrorInfo,
+} from "./langchain-fallback-chain.mjs";
+import {
+  logReviewChannelStartupWarnings,
+  resolveReviewChannelConfig,
+  validateProviderCredential,
+} from "./provider-config.mjs";
+import {
+  getReviewRuntimeSnapshot,
+  updateReviewRuntimeSnapshot,
+} from "./provider-api-runtime.mjs";
 
 // تحميل متغيرات البيئة
 config();
 
-export const DEFAULT_MODEL_ID = "claude-haiku-4-5-20251001";
-const FALLBACK_MODEL_ID = "claude-haiku-4-5-20251001";
+export const DEFAULT_MODEL_ID = "claude-sonnet-4-6";
 const REVIEW_TEMPERATURE = 0.0;
 const DEFAULT_TIMEOUT_MS = 180_000;
 const AGENT_API_VERSION = "2.0";
 const AGENT_API_MODE = "auto-apply";
-const NON_ANTHROPIC_MODEL_RE =
-  /^(mistral|pixtral|kimi|moonshot|gpt|o\d|gemini|deepseek|llama|qwen)/iu;
 
 // حساب max_tokens ديناميكي بناءً على عدد السطور المشبوهة
 // يجب أن تغطي الميزانية: تحليل كل سطر (6 خطوات تحليل مفصلة) + إخراج JSON النهائي
 // BASE = ثابت لهيكل الاستجابة + هامش أمان
-// PER_LINE = تحليل مفصل (~600 توكن) + أمر JSON (~200 توكن)
-const BASE_OUTPUT_TOKENS = 1024;
-const TOKENS_PER_SUSPICIOUS_LINE = 800;
+// PER_LINE = تحليل مفصل (~600 توكن) + أمر JSON (~400 توكن)
+// القيم مُثبّتة حسب الدستور (constitution.md §AI Providers)
+const BASE_OUTPUT_TOKENS = 1200;
+const TOKENS_PER_SUSPICIOUS_LINE = 1000;
 const PRACTICAL_MAX_OUTPUT = 64000;
 
 // ─── Retry & backoff settings for overload (529) ───
 const OVERLOAD_MAX_RETRIES = 3;
-const OVERLOAD_BASE_DELAY_MS = 3_000;
-const OVERLOAD_BACKOFF_MULTIPLIER = 2;
-
-const isOverloadError = (error) => {
-  if (!error) return false;
-  const status =
-    typeof error.status === "number"
-      ? error.status
-      : typeof error.statusCode === "number"
-        ? error.statusCode
-        : null;
-  if (status === 429 || status === 529 || status === 503) return true;
-  const msg = String(error.message || error).toLowerCase();
-  return msg.includes("overloaded") || msg.includes("rate_limit");
-};
-
-const isOverloadAxiosError = (error) => {
-  const status = error?.response?.status ?? error?.status;
-  if (status === 429 || status === 529 || status === 503) return true;
-  const msg = String(error?.message || "").toLowerCase();
-  return msg.includes("overloaded") || msg.includes("rate_limit");
-};
-
-const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
-
 const logger = pino({ name: "agent-review" });
-let reviewModelFallbackWarned = false;
+logReviewChannelStartupWarnings(logger, "agent-review");
 
 // ─────────────────────────────────────────────────────────
 // الأنواع المسموحة والثوابت
@@ -97,89 +81,25 @@ const normalizeIncomingText = (value, maxLength = 50_000) => {
   return value.trim().slice(0, maxLength);
 };
 
-const resolveAnthropicReviewRuntime = () => {
-  const requestedRaw = normalizeIncomingText(
-    process.env.ANTHROPIC_REVIEW_MODEL ?? process.env.AGENT_REVIEW_MODEL,
-    120
-  );
-  const apiRuntime = resolveAnthropicApiRuntime(process.env);
+const getAgentReviewConfig = (env = process.env) =>
+  resolveReviewChannelConfig("agent-review", env);
 
-  if (!requestedRaw) {
-    return {
-      provider: "anthropic",
-      requestedModel: null,
-      resolvedModel: DEFAULT_MODEL_ID,
-      fallbackApplied: false,
-      fallbackReason: null,
-      baseUrl: apiRuntime.baseUrl,
-      apiVersion: apiRuntime.apiVersion,
-      messagesEndpoint: apiRuntime.messagesEndpoint,
-    };
-  }
-
-  if (/\s/u.test(requestedRaw)) {
-    return {
-      provider: "anthropic",
-      requestedModel: requestedRaw,
-      resolvedModel: DEFAULT_MODEL_ID,
-      fallbackApplied: true,
-      fallbackReason: "invalid-model-whitespace",
-      baseUrl: apiRuntime.baseUrl,
-      apiVersion: apiRuntime.apiVersion,
-      messagesEndpoint: apiRuntime.messagesEndpoint,
-    };
-  }
-
-  if (NON_ANTHROPIC_MODEL_RE.test(requestedRaw)) {
-    return {
-      provider: "anthropic",
-      requestedModel: requestedRaw,
-      resolvedModel: DEFAULT_MODEL_ID,
-      fallbackApplied: true,
-      fallbackReason: "non-anthropic-model",
-      baseUrl: apiRuntime.baseUrl,
-      apiVersion: apiRuntime.apiVersion,
-      messagesEndpoint: apiRuntime.messagesEndpoint,
-    };
-  }
-
-  if (!/^claude-/iu.test(requestedRaw)) {
-    return {
-      provider: "anthropic",
-      requestedModel: requestedRaw,
-      resolvedModel: DEFAULT_MODEL_ID,
-      fallbackApplied: true,
-      fallbackReason: "unsupported-model-family",
-      baseUrl: apiRuntime.baseUrl,
-      apiVersion: apiRuntime.apiVersion,
-      messagesEndpoint: apiRuntime.messagesEndpoint,
-    };
-  }
-
+const resolveReviewRuntime = (env = process.env) => {
+  const snapshot = getReviewRuntimeSnapshot("agent-review", env);
   return {
-    provider: "anthropic",
-    requestedModel: requestedRaw,
-    resolvedModel: requestedRaw,
-    fallbackApplied: false,
-    fallbackReason: null,
-    baseUrl: apiRuntime.baseUrl,
-    apiVersion: apiRuntime.apiVersion,
-    messagesEndpoint: apiRuntime.messagesEndpoint,
+    provider: snapshot.activeProvider ?? snapshot.resolvedProvider,
+    requestedModel: snapshot.requestedModel,
+    resolvedModel: snapshot.resolvedModel,
+    resolvedSpecifier: snapshot.resolvedSpecifier,
+    fallbackApplied: snapshot.usedFallback,
+    fallbackReason: snapshot.fallbackReason,
+    fallbackModel: snapshot.fallbackModel,
+    fallbackSpecifier: snapshot.fallbackSpecifier,
+    baseUrl: snapshot.apiBaseUrl,
+    apiVersion: snapshot.apiVersion,
+    configured: snapshot.configured,
+    warnings: [...snapshot.credentialWarnings],
   };
-};
-
-const logReviewModelFallbackOnce = (runtime) => {
-  if (!runtime.fallbackApplied || reviewModelFallbackWarned) return;
-
-  reviewModelFallbackWarned = true;
-  logger.warn(
-    {
-      requestedModel: runtime.requestedModel,
-      resolvedModel: runtime.resolvedModel,
-      fallbackReason: runtime.fallbackReason,
-    },
-    "agent-review model is not Anthropic-compatible; falling back to default model"
-  );
 };
 
 const resolveAgentReviewMockMode = () => {
@@ -482,11 +402,13 @@ export const validateAgentReviewRequestBody = (rawBody) => {
 // Anthropic Client
 // ─────────────────────────────────────────────────────────
 
-let anthropicClientSingleton = null;
+export const validateAnthropicApiKey = (value) =>
+  validateProviderCredential("anthropic", {
+    ANTHROPIC_API_KEY: value,
+  });
 
-const MIN_ANTHROPIC_API_KEY_LENGTH = 20;
 
-export const validateAnthropicApiKey = (value) => {
+const validateAnthropicApiKeyLegacy = (value) => {
   const apiKey = normalizeIncomingText(value, 512);
   if (!apiKey) {
     return {
@@ -518,7 +440,7 @@ export const validateAnthropicApiKey = (value) => {
   };
 };
 
-const getAnthropicClient = () => {
+const getAnthropicClientLegacy = () => {
   if (anthropicClientSingleton) {
     return anthropicClientSingleton;
   }
@@ -539,7 +461,7 @@ const getAnthropicClient = () => {
 /**
  * استخراج النص من كتل استجابة Anthropic
  */
-const extractTextFromAnthropicBlocks = (content) => {
+const extractTextFromAnthropicBlocksLegacy = (content) => {
   const chunks = [];
   for (const block of content) {
     if (block.type === "text" && typeof block.text === "string") {
@@ -552,13 +474,13 @@ const extractTextFromAnthropicBlocks = (content) => {
 /**
  * إرسال رسالة عبر Anthropic SDK
  */
-const tryCreateMessageWithSdk = async (params) => {
+const tryCreateMessageWithSdkLegacy = async (params) => {
   const client = getAnthropicClient();
   const message = await client.messages.create(params);
   return message;
 };
 
-const resolveProviderErrorInfo = (error) => {
+const resolveProviderErrorInfoLegacy = (error) => {
   if (!(error instanceof Error)) {
     return {
       message: String(error),
@@ -952,8 +874,10 @@ export const parseReviewCommands = (rawText) => {
       if (op === "relabel") {
         const newType =
           typeof command.newType === "string" ? command.newType.trim() : "";
-        if (!newType || !ALLOWED_LINE_TYPES.has(newType)) continue;
         const normalizedNewType = normalizeSceneHeaderDecisionType(newType);
+        if (!normalizedNewType || !ALLOWED_LINE_TYPES.has(normalizedNewType)) {
+          continue;
+        }
         normalized.push({
           ...baseCommand,
           newType: normalizedNewType,
@@ -969,10 +893,17 @@ export const parseReviewCommands = (rawText) => {
           typeof command.rightType === "string" ? command.rightType.trim() : "";
 
         if (splitAt < 0) continue;
-        if (!leftType || !ALLOWED_LINE_TYPES.has(leftType)) continue;
-        if (!rightType || !ALLOWED_LINE_TYPES.has(rightType)) continue;
         const normalizedLeftType = normalizeSceneHeaderDecisionType(leftType);
         const normalizedRightType = normalizeSceneHeaderDecisionType(rightType);
+        if (!normalizedLeftType || !ALLOWED_LINE_TYPES.has(normalizedLeftType)) {
+          continue;
+        }
+        if (
+          !normalizedRightType ||
+          !ALLOWED_LINE_TYPES.has(normalizedRightType)
+        ) {
+          continue;
+        }
 
         normalized.push({
           ...baseCommand,
@@ -1218,7 +1149,11 @@ const createReviewResponseWithCoverage = (
  * محاولة إرسال طلب لـ Claude عبر SDK ثم REST fallback.
  * ترجع النتيجة أو ترمي error.
  */
-const tryCallAnthropicOnce = async (params, reviewRuntime, anthropicApiKey) => {
+const tryCallAnthropicOnceLegacy = async (
+  params,
+  reviewRuntime,
+  anthropicApiKey
+) => {
   try {
     const message = await tryCreateMessageWithSdk(params);
     return {
@@ -1255,7 +1190,7 @@ const tryCallAnthropicOnce = async (params, reviewRuntime, anthropicApiKey) => {
  * 2. لو كل المحاولات فشلت بـ overload → حاول fallback model (Sonnet)
  * 3. لو كله فشل → ارجع error مع HTTP status مناسب (providerStatusCode)
  */
-export const reviewSuspiciousLinesWithClaude = async (request) => {
+const reviewSuspiciousLinesWithClaudeLegacy = async (request) => {
   const startedAt = Date.now();
   const requestId = randomUUID();
   const emptyMeta = buildReviewCoverageMeta(request, []);
@@ -1476,7 +1411,7 @@ export const reviewSuspiciousLinesWithClaude = async (request) => {
   };
 };
 
-export const buildAnthropicMessageParams = (request, maxTokens, modelId) => ({
+const buildAnthropicMessageParamsLegacy = (request, maxTokens, modelId) => ({
   model: isNonEmptyString(modelId)
     ? modelId.trim()
     : resolveAnthropicReviewRuntime().resolvedModel,
@@ -1495,7 +1430,343 @@ export const buildAnthropicMessageParams = (request, maxTokens, modelId) => ({
 // الصادرات العامة
 // ─────────────────────────────────────────────────────────
 
-export const requestAnthropicReview = reviewSuspiciousLinesWithClaude;
-export const getAnthropicReviewRuntime = () => resolveAnthropicReviewRuntime();
-export const getAnthropicReviewModel = () =>
-  resolveAnthropicReviewRuntime().resolvedModel;
+const requestAnthropicReviewLegacy = reviewSuspiciousLinesWithClaudeLegacy;
+const getAnthropicReviewRuntimeLegacy = () => resolveReviewRuntime();
+const getAnthropicReviewModelLegacy = () =>
+  resolveReviewRuntime().resolvedModel;
+
+const AGENT_REVIEW_CHANNEL = "agent-review";
+
+const buildReviewMessages = (request) => [
+  new SystemMessage(REVIEW_SYSTEM_PROMPT),
+  new HumanMessage(buildReviewUserPrompt(request)),
+];
+
+const computeAgentReviewMaxTokens = (request, boostFactor = 1) =>
+  Math.min(
+    PRACTICAL_MAX_OUTPUT,
+    Math.max(
+      1200,
+      Math.ceil(
+        (BASE_OUTPUT_TOKENS +
+          request.suspiciousLines.length * TOKENS_PER_SUSPICIOUS_LINE) *
+          boostFactor
+      )
+    )
+  );
+
+const updateAgentReviewRuntime = (patch) =>
+  updateReviewRuntimeSnapshot(AGENT_REVIEW_CHANNEL, patch);
+
+const buildAgentReviewConfigErrorResponse = (
+  request,
+  startedAt,
+  requestId,
+  config,
+  message
+) => {
+  const meta = buildReviewCoverageMeta(request, []);
+  const status = meta.unresolvedForcedItemIds.length > 0 ? "error" : "partial";
+  const timestamp = Date.now();
+  const latencyMs = timestamp - startedAt;
+
+  updateAgentReviewRuntime({
+    activeProvider: config.resolvedProvider,
+    activeModel: config.resolvedModel ?? DEFAULT_MODEL_ID,
+    activeSpecifier: config.resolvedSpecifier,
+    usedFallback: false,
+    fallbackReason: null,
+    lastStatus: status,
+    lastErrorClass: "configuration",
+    lastErrorMessage: message,
+    lastProviderStatusCode: null,
+    retryCount: 0,
+    latencyMs,
+    lastInvocationAt: timestamp,
+    lastFailureAt: timestamp,
+  });
+
+  return {
+    status,
+    model: config.resolvedModel ?? DEFAULT_MODEL_ID,
+    apiVersion: AGENT_API_VERSION,
+    mode: AGENT_API_MODE,
+    importOpId: request.importOpId,
+    requestId,
+    commands: [],
+    message,
+    latencyMs,
+    meta,
+  };
+};
+
+export const buildAnthropicMessageParams = (request, maxTokens, modelId) => ({
+  model: isNonEmptyString(modelId)
+    ? modelId.trim()
+    : getAgentReviewConfig().resolvedModel ?? DEFAULT_MODEL_ID,
+  max_tokens: maxTokens,
+  temperature: REVIEW_TEMPERATURE,
+  system: REVIEW_SYSTEM_PROMPT,
+  messages: [
+    {
+      role: "user",
+      content: buildReviewUserPrompt(request),
+    },
+  ],
+});
+
+export const requestReview = async (rawRequest) => {
+  const request = validateAgentReviewRequestBody(rawRequest);
+  const startedAt = Date.now();
+  const requestId = randomUUID();
+  const config = getAgentReviewConfig();
+  const reviewModel = config.resolvedModel ?? DEFAULT_MODEL_ID;
+  const emptyMeta = buildReviewCoverageMeta(request, []);
+  const mockMode = resolveAgentReviewMockMode();
+  const invocationStartedAt = Date.now();
+
+  updateAgentReviewRuntime({
+    activeProvider: config.resolvedProvider,
+    activeModel: reviewModel,
+    activeSpecifier: config.resolvedSpecifier,
+    usedFallback: false,
+    fallbackReason: null,
+    lastStatus: "running",
+    lastErrorClass: null,
+    lastErrorMessage: null,
+    lastProviderStatusCode: null,
+    retryCount: 0,
+    latencyMs: null,
+    lastInvocationAt: invocationStartedAt,
+  });
+
+  if (!Array.isArray(request.suspiciousLines) || request.suspiciousLines.length === 0) {
+    const latencyMs = Date.now() - startedAt;
+    updateAgentReviewRuntime({
+      lastStatus: "skipped",
+      latencyMs,
+      retryCount: 0,
+      lastSuccessAt: Date.now(),
+    });
+    return {
+      status: "skipped",
+      model: reviewModel,
+      apiVersion: AGENT_API_VERSION,
+      mode: AGENT_API_MODE,
+      importOpId: request.importOpId,
+      requestId,
+      commands: [],
+      message: "No suspicious lines to review.",
+      latencyMs,
+      meta: emptyMeta,
+    };
+  }
+
+  if (mockMode === "error") {
+    const latencyMs = Date.now() - startedAt;
+    updateAgentReviewRuntime({
+      lastStatus: "error",
+      lastErrorClass: "mock",
+      lastErrorMessage: "AGENT_REVIEW_MOCK_MODE=error",
+      retryCount: 0,
+      latencyMs,
+      lastFailureAt: Date.now(),
+    });
+    return {
+      status: "error",
+      model: reviewModel,
+      apiVersion: AGENT_API_VERSION,
+      mode: AGENT_API_MODE,
+      importOpId: request.importOpId,
+      requestId,
+      commands: [],
+      message: "AGENT_REVIEW_MOCK_MODE=error",
+      latencyMs,
+      meta: emptyMeta,
+    };
+  }
+
+  if (mockMode === "success") {
+    const commands = buildMockReviewCommands(request);
+    const response = createReviewResponseWithCoverage(
+      request,
+      commands,
+      startedAt,
+      `Mock success: ${commands.length} commands generated.`,
+      requestId,
+      reviewModel
+    );
+    updateAgentReviewRuntime({
+      lastStatus: response.status,
+      lastErrorClass: null,
+      lastErrorMessage: null,
+      retryCount: 0,
+      latencyMs: response.latencyMs,
+      lastSuccessAt: Date.now(),
+    });
+    return response;
+  }
+
+  const configError =
+    (!config.primary?.valid && config.primary?.error) ||
+    (!config.primary?.credential?.valid && config.primary?.credential?.message) ||
+    null;
+
+  if (configError) {
+    return buildAgentReviewConfigErrorResponse(
+      request,
+      startedAt,
+      requestId,
+      config,
+      configError
+    );
+  }
+
+  const messages = buildReviewMessages(request);
+
+  for (const boostFactor of [1, 2]) {
+    const maxTokens = computeAgentReviewMaxTokens(request, boostFactor);
+    try {
+      const invocation = await invokeWithFallback({
+        channel: AGENT_REVIEW_CHANNEL,
+        primaryTarget: config.primary,
+        fallbackTarget: config.fallback,
+        messages,
+        temperature: REVIEW_TEMPERATURE,
+        maxTokens,
+        timeoutMs: DEFAULT_TIMEOUT_MS,
+        logger,
+      });
+
+      const commands = parseReviewCommands(invocation.text);
+      if (
+        invocation.stopReason === "max_tokens" &&
+        commands.length === 0 &&
+        boostFactor === 1
+      ) {
+        logger.warn(
+          {
+            channel: AGENT_REVIEW_CHANNEL,
+            provider: invocation.provider,
+            model: invocation.model,
+            maxTokens,
+          },
+          "agent review response reached max tokens without parseable commands"
+        );
+        continue;
+      }
+
+      const response = createReviewResponseWithCoverage(
+        request,
+        commands,
+        startedAt,
+        `Received ${commands.length} commands from ${invocation.provider}.`,
+        requestId,
+        invocation.model
+      );
+
+      updateAgentReviewRuntime({
+        activeProvider: invocation.provider,
+        activeModel: invocation.model,
+        activeSpecifier: invocation.requestedSpecifier,
+        usedFallback: invocation.usedFallback,
+        fallbackReason: invocation.usedFallback
+          ? "temporary-primary-failure"
+          : null,
+        lastStatus: response.status,
+        lastErrorClass: null,
+        lastErrorMessage: null,
+        lastProviderStatusCode: null,
+        retryCount: invocation.retryCount,
+        latencyMs: response.latencyMs,
+        lastSuccessAt: Date.now(),
+      });
+
+      logger.info(
+        {
+          channel: AGENT_REVIEW_CHANNEL,
+          provider: invocation.provider,
+          model: invocation.model,
+          usedFallback: invocation.usedFallback,
+          retryCount: invocation.retryCount,
+          latencyMs: response.latencyMs,
+        },
+        "agent review completed"
+      );
+
+      return response;
+    } catch (error) {
+      const providerInfo = resolveProviderErrorInfo(error);
+      const latencyMs = Date.now() - startedAt;
+      const usedFallback = Boolean(
+        config.fallback?.usable &&
+          error?.specifier &&
+          config.fallback.specifier === error.specifier
+      );
+
+      updateAgentReviewRuntime({
+        activeProvider: error?.provider ?? config.resolvedProvider,
+        activeModel: error?.model ?? reviewModel,
+        activeSpecifier: error?.specifier ?? config.resolvedSpecifier,
+        usedFallback,
+        fallbackReason: usedFallback ? "fallback-exhausted" : null,
+        lastStatus: "error",
+        lastErrorClass: providerInfo.temporary
+          ? "temporary-provider-error"
+          : "provider-error",
+        lastErrorMessage: providerInfo.message,
+        lastProviderStatusCode: providerInfo.status ?? null,
+        retryCount: typeof error?.retryCount === "number" ? error.retryCount : 0,
+        latencyMs,
+        lastFailureAt: Date.now(),
+      });
+
+      logger.error(
+        {
+          channel: AGENT_REVIEW_CHANNEL,
+          provider: error?.provider ?? config.resolvedProvider,
+          model: error?.model ?? reviewModel,
+          status: providerInfo.status,
+          temporary: providerInfo.temporary,
+        },
+        "agent review failed"
+      );
+
+      return {
+        status: "error",
+        model: reviewModel,
+        apiVersion: AGENT_API_VERSION,
+        mode: AGENT_API_MODE,
+        importOpId: request.importOpId,
+        requestId,
+        commands: [],
+        message: `Agent review failed: ${providerInfo.message}`,
+        latencyMs,
+        meta: emptyMeta,
+        providerStatusCode: providerInfo.status ?? null,
+      };
+    }
+  }
+
+  return {
+    status: "partial",
+    model: reviewModel,
+    apiVersion: AGENT_API_VERSION,
+    mode: AGENT_API_MODE,
+    importOpId: request.importOpId,
+    requestId,
+    commands: [],
+    message: "Agent review returned no parseable commands.",
+    latencyMs: Date.now() - startedAt,
+    meta: emptyMeta,
+  };
+};
+
+export const reviewSuspiciousLinesWithClaude = requestReview;
+export const getReviewRuntime = () => resolveReviewRuntime();
+export const getReviewModel = () =>
+  resolveReviewRuntime().resolvedModel || DEFAULT_MODEL_ID;
+
+export const requestAnthropicReview = requestReview;
+export const getAnthropicReviewRuntime = getReviewRuntime;
+export const getAnthropicReviewModel = getReviewModel;

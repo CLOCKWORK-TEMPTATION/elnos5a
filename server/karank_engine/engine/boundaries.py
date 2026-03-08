@@ -5,6 +5,7 @@ from typing import Dict, List, Literal, Optional, Tuple, TypedDict
 
 from .predicates import (
     extract_action_character_rebalance,
+    looks_like_dialogue_continuation,
     split_dialogue_action,
     split_scene_header_action,
     split_scene_number_tail,
@@ -54,25 +55,25 @@ def propose_boundaries(elements: List[Tuple[State, str]]) -> List[BoundaryPropos
                     line_index=idx,
                     operation="split",
                     confidence=0.93,
-                    reason="cene_header_1 + cene_header_2",
+                    reason="scene-header-1 + scene-header-2",
                     pieces=[
-                        {"type": "cene_header_1", "text": scene_number_tail[0]},
-                        {"type": "cene_header_2", "text": scene_number_tail[1]},
+                        {"type": "scene-header-1", "text": scene_number_tail[0]},
+                        {"type": "scene-header-2", "text": scene_number_tail[1]},
                     ],
                     issue_kind="scene-number-tail-combined",
                 )
             )
 
         scene_header_action = split_scene_header_action(stripped)
-        if scene_header_action and state in {State.scene_header_3, State.ACTION, State.BASMALA}:
+        if scene_header_action and state in {State.SCENE_HEADER_3, State.ACTION, State.BASMALA}:
             proposals.append(
                 BoundaryProposal(
                     line_index=idx,
                     operation="split",
                     confidence=0.9,
-                    reason="scene_header_3 + action",
+                    reason="scene-header-3 + action",
                     pieces=[
-                        {"type": "scene_header_3", "text": scene_header_action[0]},
+                        {"type": "scene-header-3", "text": scene_header_action[0]},
                         {"type": "action", "text": scene_header_action[1]},
                     ],
                     issue_kind="scene-header-action-combined",
@@ -112,10 +113,31 @@ def propose_boundaries(elements: List[Tuple[State, str]]) -> List[BoundaryPropos
                     )
                 )
 
+        if idx > 0 and idx + 1 < len(elements):
+            prev_state, prev_text = elements[idx - 1]
+            next_state, _next_text = elements[idx + 1]
+            if (
+                state == State.ACTION
+                and prev_state == State.DIALOGUE
+                and next_state == State.CHARACTER
+                and looks_like_dialogue_continuation(prev_text, stripped)
+            ):
+                proposals.append(
+                    BoundaryProposal(
+                        line_index=idx,
+                        operation="merge_with_prev",
+                        confidence=0.9,
+                        reason="broken dialogue continuation",
+                        issue_kind="dialogue-continuation-fragment",
+                    )
+                )
+
     return proposals
 
 
 def _infer_merged_state(prev_state: State, current_state: State, next_state: Optional[State] = None) -> State:
+    if prev_state == State.DIALOGUE or current_state == State.DIALOGUE:
+        return State.DIALOGUE
     if current_state == State.CHARACTER or prev_state == State.CHARACTER:
         return State.CHARACTER
     if next_state == State.CHARACTER:

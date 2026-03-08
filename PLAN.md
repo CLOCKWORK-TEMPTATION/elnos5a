@@ -1,93 +1,139 @@
-# دمج المحرك داخل `C:\Users\Mohmed Aimen Raed\elnos5a` كجزء من التطبيق نفسه
+﻿# تحويل وكيل المراجعة من Anthropic SDK إلى LangChain Deep Agents SDK
 
-## الملخص
+تحويل طبقة المراجعة (agent-review + final-review) من الاعتماد المباشر على `@anthropic-ai/sdk` إلى استخدام LangChain SDK مع دعم التبديل بين عدة مزودين (Anthropic, OpenAI, Google Gemini, DeepSeek).
 
-- يبدأ التنفيذ من فرع جديد `elmo7rk` منشأ من `main`.
-- هذه الخطة تستبدل الاعتماد الخارجي على `D:\karank` في وقت التشغيل بالكامل.
-- المحرك سيُنقل إلى داخل المستودع نفسه كـ vendored runtime tracked files، ويصبح مساره التشغيلي الثابت داخل التطبيق:
-  - `C:\Users\Mohmed Aimen Raed\elnos5a\server\karank_engine\engine\...`
-  - ويُشغَّل الـ bridge من:
-    - `C:\Users\Mohmed Aimen Raed\elnos5a\server\karank_engine\engine\ts_bridge.py`
-- `D:\karank` سيُستخدم فقط مرة واحدة كمصدر نسخ أولي أثناء التنفيذ، ثم يصبح التطبيق مستقلًا تمامًا عنه. لا `submodule`، لا `symlink`، ولا اعتماد runtime خارجي.
-- كل الإدخال سيمر بالمحرك:
-  - `open/import` للملفات
-  - `paste` للنصوص
-  - `docx` عبر `parseDocx`
-  - بقية الصيغ عبر استخراج النص أولًا ثم `parseText`
+---
 
-## التغييرات الأساسية
+## الوضع الحالي
 
-- إضافة نسخة مملوكة للمشروع من المحرك داخل `server/karank_engine/` مع الحفاظ على بنية بايثون الأصلية حتى يعمل `ts_bridge.py` دون تعديل جذري في imports.
-- إضافة مدير bridge داخل `server/` يشغّل `python <repo>/server/karank_engine/engine/ts_bridge.py` كعملية طويلة العمر:
-  - تشغيل lazy
-  - `ping` عند البدء
-  - إعادة تشغيل تلقائي عند الموت
-  - فشل صريح إذا غاب `python` أو ملفات المحرك المضمّنة داخل المستودع
-  - لا fallback إلى المسار القديم
-- تعديل `server/file-import-server.mjs` ليصبح هو بوابة "الاستخراج + تشغيل المحرك":
-  - `docx`: حفظ مؤقت ثم `parseDocx(path)`
-  - `doc`/`txt`/`fountain`/`fdx`/`pdf`: استخراج النص الحالي ثم `parseText(text)`
-  - الاستجابة ستخرج من bridge ثم تُطبع إلى payload موحد:
-    - `text = schema_text`
-    - `rawExtractedText`
-    - `schemaText`
-    - `schemaElements`
-    - `structuredBlocks`
-    - `method = "karank-engine-bridge"`
-- إضافة `POST /api/text-extract` للنصوص الملصوقة أو النص الخام، بنفس envelope الخاص بـ `/api/file-extract`.
-- تعديل الواجهة بحيث لا تعتمد على المحرك الخارجي:
-  - `open/import` يستخدم backend engine-backed كما في الخطة الأصلية
-  - `paste` يرسل النص أولًا إلى `/api/text-extract`
-  - الناتج الراجع يدخل بقية البايب لاين الحالية
-- تعديل `paste-classifier` ليفهم `ELEMENT = VALUE` مباشرة:
-  - لا يعيد heuristic classification عندما يكون الإدخال schema-style
-  - يحول schema lines مباشرة إلى `ClassifiedDraft`
-  - `cene_header_1 + cene_header_2` يتحولان إلى `sceneHeaderTopLine`
-  - `scene_header_3` إلى `sceneHeader3`
-  - حالات orphan headers تُحوَّل إلى `sceneHeaderTopLine` جزئي مع telemetry واضح
-  - أي element غير معروف يرفض الطلب بخطأ صريح
-- الإبقاء على طبقة الشك والمراجعة الحالية بعد ناتج المحرك كما هي:
-  - `PostClassificationReviewer`
-  - `/api/agent/review`
-  - ثم العرض النهائي في Tiptap
+| ملف | الدور | الاعتماد الحالي |
+|------|-------|-----------------|
+| `server/agent-review.mjs` (1502 سطر) | مراجعة الوكيل — الطبقة 4 في pipeline التصنيف | `@anthropic-ai/sdk` مباشرة + REST fallback عبر axios |
+| `server/final-review.mjs` (1258 سطر) | المراجعة النهائية — تحسين على agent-review | نفس النمط |
+| `server/provider-api-runtime.mjs` | حل عناوين الـ API endpoints | Anthropic-specific |
+| `server/controllers/*-controller.mjs` | HTTP controllers | يستورد من الملفات أعلاه |
+| `server/routes/index.mjs` | الراوتر + health endpoint | يستخدم `getAnthropicReviewModel/Runtime` |
+| `src/final-review/payload-builder.ts` | بناء حزمة الطلب (frontend) | **لا يتصل بـ AI — لا يتغير** |
 
-## تغييرات الواجهات والأنواع
+### المشاكل في الوضع الحالي
+- مقفل على Anthropic فقط (مفتاح `sk-ant-` مطلوب)
+- لا يمكن التبديل لـ OpenAI/Gemini/DeepSeek
+- كود مكرر كبير بين `agent-review.mjs` و `final-review.mjs`
 
-- runtime path الجديد للمحرك ثابت داخل المشروع، وليس `D:\karank`.
-- `FileExtractionResult` يتوسع بالحقول:
-  - `schemaText?: string`
-  - `schemaElements?: Array<{ element: string; value: string }>`
-  - `rawExtractedText?: string`
-- `ExtractionMethod` يتوسع بقيمة:
-  - `karank-engine-bridge`
-- `ClassificationMethod` يتوسع بقيمة:
-  - `external-engine`
-- رسائل الخطأ والتشخيص يجب أن تشير إلى المسار vendored داخل `C:\Users\Mohmed Aimen Raed\elnos5a` فقط، لا إلى `D:\karank`.
+---
 
-## خطة الاختبار
+## الخطة
 
-- اختبارات وحدة/منطق:
-  - parser صيغة `ELEMENT = VALUE`
-  - تحويل `cene_header_1/2` إلى `sceneHeaderTopLine`
-  - orphan headers
-  - mapping من `schemaElements` إلى `structuredBlocks`
-- اختبارات تكامل حقيقي للـ backend:
-  - تشغيل backend مع المحرك المضمَّن داخل `server/karank_engine`
-  - `POST /api/file-extract` على `C:\Users\Mohmed Aimen Raed\elnos5a\نسخ الملفات ال docanddocx\1990.docx`
-  - `POST /api/text-extract` على نص عربي حقيقي
-  - التحقق من `method = karank-engine-bridge` وأن `text` هو `schema_text`
-- اختبارات تكامل/E2E:
-  - فتح `1990.docx` حتى الظهور على الشاشة
-  - لصق نص عربي حتى الظهور على الشاشة
-  - التحقق أن البايب لاين تظل: محرك مضمَّن → فهم schema → طبقة الشك → `/api/agent/review` → العرض
-- معيار قبول إضافي إلزامي:
-  - التطبيق يجب أن يعمل حتى لو لم يعد `D:\karank` موجودًا أصلًا على الجهاز
-  - لا يوجد أي استدعاء runtime أو path lookup خارج `C:\Users\Mohmed Aimen Raed\elnos5a`
+### 1. تثبيت الحزم المطلوبة
 
-## الافتراضات المعتمدة
+```bash
+pnpm add langchain @langchain/core @langchain/anthropic @langchain/openai @langchain/google-genai
+```
 
-- المحرك سيُنسخ إلى داخل المستودع كنسخة مضمّنة tracked files، وليس كرابط خارجي.
-- المسار التشغيلي المعتمد داخل المشروع هو `server/karank_engine/engine/ts_bridge.py`.
-- `python` متاح على `PATH`.
-- المطلوب إبقاء طبقة الشك والمراجعة، لا تجاوزها.
-- المطلوب أن يصبح المشروع self-contained: أي شخص يشغّل `C:\Users\Mohmed Aimen Raed\elnos5a` يحصل على المحرك ضمن التطبيق نفسه دون الحاجة إلى `D:\karank`.
+- `langchain` — يوفر `initChatModel` للتبديل بين المزودين بصيغة `provider:model`
+- `@langchain/anthropic` — Claude models
+- `@langchain/openai` — GPT + DeepSeek (عبر OpenAI-compatible API)
+- `@langchain/google-genai` — Gemini models
+
+### 2. إنشاء `server/llm-provider.mjs` — مصنع النماذج الموحد (ملف جديد)
+
+مسؤول عن:
+- تحليل صيغة النموذج `provider:model` (مثال: `anthropic:claude-sonnet-4-6`, `openai:gpt-5`, `google-genai:gemini-2.5-flash`)
+- إنشاء نموذج LangChain المناسب عبر `initChatModel`
+- التحقق من وجود مفتاح API المناسب لكل مزود
+- إرجاع معلومات الـ runtime (provider, model, etc.) للـ health endpoint
+- دعم fallback model من مزود مختلف
+
+صيغة متغيرات البيئة الجديدة:
+```env
+# الأساسي — صيغة provider:model
+AGENT_REVIEW_MODEL=anthropic:claude-sonnet-4-6
+FINAL_REVIEW_MODEL=anthropic:claude-sonnet-4-6
+
+# البديل (fallback) — يمكن أن يكون مزود مختلف
+AGENT_REVIEW_FALLBACK_MODEL=openai:gpt-4.1
+FINAL_REVIEW_FALLBACK_MODEL=google-genai:gemini-2.5-flash
+
+# مفاتيح API (كل مزود يحتاج مفتاحه)
+ANTHROPIC_API_KEY=sk-ant-...
+OPENAI_API_KEY=sk-...
+GEMINI_API_KEY=...
+```
+
+التوافق مع الخلف: لو المستخدم كتب `claude-sonnet-4-6` بدون prefix، يُعامل كـ `anthropic:claude-sonnet-4-6` تلقائياً.
+
+### 3. تعديل `server/agent-review.mjs`
+
+**ما يتغير:**
+- استبدال `import Anthropic from "@anthropic-ai/sdk"` بـ `import { createReviewModel } from "./llm-provider.mjs"`
+- استبدال `getAnthropicClient()` + `client.messages.create()` بـ `model.invoke([systemMsg, humanMsg])`
+- استبدال `extractTextFromAnthropicBlocks()` بقراءة `response.content` مباشرة (LangChain يوحد الصيغة)
+- تعديل `resolveAnthropicReviewRuntime()` → `resolveReviewRuntime()` (provider-agnostic)
+- تعديل `validateAnthropicApiKey()` → `validateProviderApiKey(provider)` (يتحقق حسب المزود)
+- تعديل `tryCallAnthropicOnce()` → `tryCallModelOnce()` (يستخدم LangChain)
+- إزالة REST fallback عبر axios (LangChain يتعامل مع HTTP)
+
+**ما لا يتغير:**
+- System prompt (REVIEW_SYSTEM_PROMPT) — نفسه بالضبط
+- `buildReviewUserPrompt()` — نفسه
+- `parseReviewCommands()` — نفسه (يحلل JSON من النص)
+- `normalizeCommandsAgainstRequest()` — نفسه
+- `buildReviewCoverageMeta()` — نفسه
+- `createReviewResponseWithCoverage()` — نفسه
+- Retry logic + overload detection — يتم تكييفها لأخطاء LangChain
+- Mock mode — نفسه
+- كل منطق التحقق والتطبيع — نفسه
+
+### 4. تعديل `server/final-review.mjs`
+
+نفس التغييرات كـ agent-review:
+- استبدال Anthropic SDK بـ LangChain
+- `callAnthropicApi()` → `callReviewModel()`
+- `resolveModel()` → يقرأ `FINAL_REVIEW_MODEL` بصيغة `provider:model`
+
+### 5. تحديث `server/routes/index.mjs` و health endpoint
+
+- `getAnthropicReviewModel()` → `getReviewModel()` (يرجع `provider:model`)
+- `getAnthropicReviewRuntime()` → `getReviewRuntime()` (يرجع provider + model + status)
+
+### 6. تحديث `server/provider-api-runtime.mjs`
+
+- إضافة دوال لحل عناوين OpenAI و Gemini
+- أو الاعتماد على LangChain لإدارة الـ endpoints (أبسط)
+
+---
+
+## الملفات التي لا تتغير
+
+- `src/final-review/payload-builder.ts` — يبني الحزمة على الـ frontend، لا يتصل بـ AI
+- `server/controllers/agent-review-controller.mjs` — يستورد `requestAnthropicReview` الذي سنحافظ على اسمه (أو ننشئ alias)
+- `server/controllers/final-review-controller.mjs` — نفس الشيء
+
+---
+
+## المزودين المدعومين بعد التحويل
+
+| الصيغة | المزود | أمثلة |
+|--------|--------|-------|
+| `anthropic:MODEL` | Anthropic | `anthropic:claude-sonnet-4-6`, `anthropic:claude-haiku-4-5-20251001` |
+| `openai:MODEL` | OpenAI | `openai:gpt-5`, `openai:gpt-4.1`, `openai:gpt-4o` |
+| `google-genai:MODEL` | Google Gemini | `google-genai:gemini-2.5-flash`, `google-genai:gemini-2.5-pro` |
+| `MODEL` (بدون prefix) | Anthropic (افتراضي) | `claude-sonnet-4-6` → `anthropic:claude-sonnet-4-6` |
+
+---
+
+## المخاطر والتخفيفات
+
+| المخاطر | التخفيف |
+|---------|---------|
+| LangChain قد يتعامل مع token limits بشكل مختلف | نحتفظ بمنطق `maxTokens` ونمرره كـ `maxOutputTokens` |
+| Retry logic مختلفة | نحتفظ بالـ retry loop الخاص بنا ونستخدم LangChain للاستدعاء فقط |
+| بعض النماذج لا تدعم system prompt بنفس الطريقة | LangChain يوحد هذا تلقائياً |
+| أخطاء مختلفة من مزودين مختلفين | نكتب `isOverloadError` عام يغطي كل المزودين |
+
+---
+
+## ملاحظات
+
+- **Deep Agents (`createDeepAgent`)** مصمم لمهام متعددة الخطوات مع أدوات. مهمة المراجعة هنا هي **single-shot** (system prompt + user message → JSON). لذلك `initChatModel` من `langchain` هو الأنسب — يوفر نفس ميزة التبديل بين المزودين بدون التعقيد الزائد.
+- لو في المستقبل عايز تضيف أدوات أو خطوات متعددة للوكيل، يمكن الترقية لـ `createDeepAgent` بسهولة لأن `initChatModel` متوافق معاه.

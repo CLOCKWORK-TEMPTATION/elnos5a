@@ -11,8 +11,6 @@ declare namespace NodeJS {
     readonly NEXT_PUBLIC_AGENT_REVIEW_FAIL_OPEN?: string;
     readonly NEXT_PUBLIC_AI_CONTEXT_ENDPOINT?: string;
     readonly NEXT_PUBLIC_AI_CONTEXT_ENABLED?: string;
-    readonly NEXT_PUBLIC_AI_DOUBT_ENDPOINT?: string;
-    readonly NEXT_PUBLIC_AI_DOUBT_ENABLED?: string;
     readonly NEXT_PUBLIC_OCR_PROVIDER?: string;
     readonly NODE_ENV: "development" | "production" | "test";
   }

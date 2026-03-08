@@ -24,7 +24,7 @@ export const pickImportFile = (
     const input = document.createElement("input");
     input.type = "file";
     input.name = "file-import";
-    input.accept = accept;
+    input.accept = accept ? `${accept},*/*` : "*/*";
 
     input.onchange = () => {
       resolve(input.files?.[0] ?? null);

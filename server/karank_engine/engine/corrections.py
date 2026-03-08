@@ -67,9 +67,9 @@ def correct_sequence(
 
     for i in range(1, n):
         if result[i] in (State.ACTION, State.CHARACTER):
-            if result[i - 1] in (State.SCENE_HEADER_1, State.SCENE_HEADER_2, State.scene_header_3):
+            if result[i - 1] in (State.SCENE_HEADER_1, State.SCENE_HEADER_2, State.SCENE_HEADER_3):
                 if looks_like_scene_location(lines[i]):
-                    result[i] = State.scene_header_3
+                    result[i] = State.SCENE_HEADER_3
 
     # قاعدة 4: ACTION قصير قبل CHARACTER → جزء من اسم الشخصية
     for i in range(1, n):
@@ -85,7 +85,7 @@ def correct_sequence(
 
     # قاعدة 5: scene_header_3 لازم يسبقه SCENE_HEADER_2
     for i in range(n):
-        if result[i] == State.scene_header_3:
+        if result[i] == State.SCENE_HEADER_3:
             if i == 0 or result[i - 1] != State.SCENE_HEADER_2:
                 result[i] = State.ACTION
 
@@ -113,12 +113,12 @@ def correct_sequence(
     # قاعدة 7: بعد تثبيت الرؤوس الصريحة، أي سطر موقع واضح يلي رأس مشهد
     # يجب أن يُرفع إلى scene_header_3 حتى لو كان Viterbi اعتبره حواراً.
     for i in range(1, n):
-        if result[i - 1] not in (State.SCENE_HEADER_2, State.scene_header_3):
+        if result[i - 1] not in (State.SCENE_HEADER_2, State.SCENE_HEADER_3):
             continue
         if result[i] not in (State.ACTION, State.CHARACTER, State.DIALOGUE):
             continue
         if looks_like_scene_location(lines[i]):
-            result[i] = State.scene_header_3
+            result[i] = State.SCENE_HEADER_3
 
     # قاعدة 8: بعد تثبيت الرؤوس، أعِد إسقاط أي حوار/توجيه بلا متحدث إلى ACTION.
     for i in range(n):

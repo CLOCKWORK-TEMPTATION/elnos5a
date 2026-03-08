@@ -29,6 +29,7 @@ import {
 } from "../utils/file-import";
 import { logger } from "../utils/logger";
 import { loadFromStorage } from "../hooks";
+import { pipelineRecorder } from "../extensions/pipeline-recorder";
 
 interface EditorAutosaveSnapshot {
   text: string;
@@ -100,8 +101,22 @@ export const openFile = async (
     }
 
     const isPdf = file.name.toLowerCase().endsWith(".pdf");
+    const extractStart = performance.now();
+    pipelineRecorder.logFileOpen(
+      file.name,
+      detectedFileType ?? "unknown",
+      mode
+    );
     const extraction = await extractImportedFile(file, {
       backend: { timeoutMs: isPdf ? 10 * 60 * 1_000 : 45_000 },
+    });
+    pipelineRecorder.logFileExtractDone({
+      fileName: file.name,
+      method: extraction.method,
+      usedOcr: extraction.usedOcr,
+      textLength: extraction.text.length,
+      schemaElementCount: extraction.schemaElements?.length ?? 0,
+      latencyMs: Math.round(performance.now() - extractStart),
     });
     const action = buildFileOpenPipelineAction(extraction, mode);
     let appliedPipeline = "paste-classifier" as const;

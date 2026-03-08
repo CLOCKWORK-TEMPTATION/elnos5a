@@ -148,10 +148,44 @@ const computeTypeDist = (
 // ─── Event Bus ────────────────────────────────────────────────────
 
 export type PipelineEvent =
-  | { kind: "run-start"; runId: string; source: string; input: { textLength: number; lineCount: number } }
-  | { kind: "snapshot"; stage: string; lineCount: number; changes: number; latencyMs: number; metadata?: Record<string, unknown> }
+  | {
+      kind: "run-start";
+      runId: string;
+      source: string;
+      input: { textLength: number; lineCount: number };
+    }
+  | {
+      kind: "snapshot";
+      stage: string;
+      lineCount: number;
+      changes: number;
+      latencyMs: number;
+      metadata?: Record<string, unknown>;
+      activeFiles: string[];
+    }
   | { kind: "ai-correction"; correction: RecordedAICorrection }
-  | { kind: "run-end"; totalDurationMs: number; totalVerdicts: number; finalTypeDist: Record<string, number> };
+  | {
+      kind: "run-end";
+      totalDurationMs: number;
+      totalVerdicts: number;
+      finalTypeDist: Record<string, number>;
+    }
+  | {
+      kind: "engine-bridge";
+      source: string;
+      elementCount: number;
+      latencyMs: number;
+    }
+  | { kind: "file-open"; fileName: string; fileType: string; mode: string }
+  | {
+      kind: "file-extract-done";
+      fileName: string;
+      method: string;
+      usedOcr: boolean;
+      textLength: number;
+      schemaElementCount: number;
+      latencyMs: number;
+    };
 
 type PipelineEventListener = (event: PipelineEvent) => void;
 
@@ -161,15 +195,22 @@ class PipelineRecorder {
   private _currentRun: PipelineRunReport | null = null;
   private _lastCompletedRun: PipelineRunReport | null = null;
   private readonly _listeners = new Set<PipelineEventListener>();
+  private readonly _trackedFiles = new Set<string>();
 
   subscribe(listener: PipelineEventListener): () => void {
     this._listeners.add(listener);
-    return () => { this._listeners.delete(listener); };
+    return () => {
+      this._listeners.delete(listener);
+    };
   }
 
   private _emit(event: PipelineEvent): void {
     for (const listener of this._listeners) {
-      try { listener(event); } catch { /* سلامة — لا نوقف الـ pipeline بسبب خطأ UI */ }
+      try {
+        listener(event);
+      } catch {
+        /* سلامة — لا نوقف الـ pipeline بسبب خطأ UI */
+      }
     }
   }
 
@@ -236,7 +277,17 @@ class PipelineRecorder {
       latencyMs = diff.latencyMs;
     }
 
-    this._emit({ kind: "snapshot", stage, lineCount: classified.length, changes, latencyMs, metadata });
+    const activeFiles = [...this._trackedFiles];
+    this._trackedFiles.clear();
+    this._emit({
+      kind: "snapshot",
+      stage,
+      lineCount: classified.length,
+      changes,
+      latencyMs,
+      metadata,
+      activeFiles,
+    });
   }
 
   /**
@@ -246,6 +297,41 @@ class PipelineRecorder {
     if (!this._currentRun) return;
     (this._currentRun.aiCorrections as RecordedAICorrection[]).push(correction);
     this._emit({ kind: "ai-correction", correction });
+  }
+
+  /**
+   * رصد ملف كود اشتغل — يُستدعى من الملفات نفسها عند تنفيذ دوالها.
+   */
+  trackFile(fileName: string): void {
+    this._trackedFiles.add(fileName);
+  }
+
+  /**
+   * رصد استدعاء البريدج — observation only بدون لمس حالة الـ run.
+   */
+  logBridgeCall(source: string, elementCount: number, latencyMs: number): void {
+    this._emit({ kind: "engine-bridge", source, elementCount, latencyMs });
+  }
+
+  /**
+   * رصد فتح ملف — بداية رحلة الملف.
+   */
+  logFileOpen(fileName: string, fileType: string, mode: string): void {
+    this._emit({ kind: "file-open", fileName, fileType, mode });
+  }
+
+  /**
+   * رصد انتهاء استخراج الملف — الباك إند خلص.
+   */
+  logFileExtractDone(info: {
+    fileName: string;
+    method: string;
+    usedOcr: boolean;
+    textLength: number;
+    schemaElementCount: number;
+    latencyMs: number;
+  }): void {
+    this._emit({ kind: "file-extract-done", ...info });
   }
 
   /**
@@ -269,7 +355,8 @@ class PipelineRecorder {
     this._emit({
       kind: "run-end",
       totalDurationMs: this._currentRun.totalDurationMs,
-      totalVerdicts: this._currentRun.aiCorrections.filter(c => c.applied).length,
+      totalVerdicts: this._currentRun.aiCorrections.filter((c) => c.applied)
+        .length,
       finalTypeDist: this._currentRun.finalTypeDist,
     });
 

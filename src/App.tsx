@@ -474,20 +474,22 @@ export function App(): React.JSX.Element {
   useEffect(() => {
     const handleGlobalShortcut = (event: KeyboardEvent): void => {
       if (!(event.ctrlKey || event.metaKey)) return;
-      const area = editorAreaRef.current;
-      if (!area) return;
 
       const key = event.key.toLowerCase();
+
+      // مراقب الـ pipeline — يعمل حتى لو المحرر مش جاهز
+      if (event.shiftKey && key === "m") {
+        event.preventDefault();
+        setShowPipelineMonitor((prev) => !prev);
+        return;
+      }
+
+      const area = editorAreaRef.current;
+      if (!area) return;
 
       if (key in SHORTCUT_FORMAT_BY_DIGIT) {
         event.preventDefault();
         area.setFormat(SHORTCUT_FORMAT_BY_DIGIT[key]);
-        return;
-      }
-
-      if (event.shiftKey && key === "m") {
-        event.preventDefault();
-        setShowPipelineMonitor((prev) => !prev);
         return;
       }
 

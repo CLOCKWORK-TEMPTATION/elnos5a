@@ -32,6 +32,7 @@ import {
 import { PRONOUN_ACTION_RE } from "./arabic-patterns";
 import { CLASSIFICATION_VALID_SEQUENCES } from "./classification-sequence-rules";
 import { logger } from "../utils/logger";
+import { pipelineRecorder } from "./pipeline-recorder";
 
 const optimizerLogger = logger.createScope("sequence-optimizer");
 
@@ -587,6 +588,7 @@ export const optimizeSequence = (
   drafts: readonly ClassifiedDraft[],
   preSeeded: ReadonlySet<string> = new Set()
 ): SequenceOptimizationResult => {
+  pipelineRecorder.trackFile("structural-sequence-optimizer.ts");
   if (drafts.length === 0) {
     return {
       viterbiSequence: [],

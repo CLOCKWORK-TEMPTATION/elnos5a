@@ -66,6 +66,7 @@ import {
   splitSceneHeaderLine,
 } from "./scene-header-top-line";
 import { isTransitionLine } from "./transition";
+import { stripLeadingBullets } from "./text-utils";
 import { progressiveUpdater } from "./ai-progressive-updater";
 import { pipelineRecorder } from "./pipeline-recorder";
 import {
@@ -103,7 +104,13 @@ import {
   type ClassifiedDraftWithId,
 } from "./paste-classifier-helpers";
 import { requestContextEnhancement } from "./ai-context-layer";
-import { requestDoubtResolution } from "./ai-doubt-layer";
+import { traceCollector } from "@/suspicion-engine/trace/trace-collector";
+import type { PassStage } from "@/suspicion-engine/types";
+import { createDefaultSuspicionEngine } from "@/suspicion-engine/engine";
+import {
+  collectTracesFromMap,
+  applyPreRenderActions,
+} from "@/suspicion-engine/adapters/from-classifier";
 import type {
   AgentReviewRequestPayload,
   AgentReviewResponsePayload,
@@ -127,6 +134,53 @@ import {
   logAgentError,
   telemetry as pipelineTelemetry,
 } from "../pipeline/telemetry";
+import type { SuspicionCase } from "@/suspicion-engine/types";
+import type { ReviewRoutingStats as FinalReviewRoutingStats } from "@/types/final-review";
+import type {
+  FinalReviewRequestPayload,
+  FinalReviewResponsePayload,
+  FinalReviewSuspiciousLinePayload,
+} from "@/types/final-review";
+import {
+  FINAL_REVIEW_ENDPOINT,
+  FINAL_REVIEW_PROMOTION_THRESHOLD,
+  DEFAULT_FINAL_REVIEW_SCHEMA_HINTS,
+} from "./paste-classifier-config";
+import {
+  buildFinalReviewSuspiciousLinePayload,
+  formatFinalReviewPacketText,
+} from "@/final-review/payload-builder";
+
+// ── Re-entry guard + text dedup ──────────────────────────────────────────────
+let pipelineRunning = false;
+let lastProcessedHash = "";
+let lastProcessedAt = 0;
+const DEDUP_WINDOW_MS = 2_000;
+
+const simpleHash = (str: string): string => {
+  let hash = 5381;
+  for (let i = 0; i < str.length; i++) {
+    hash = ((hash << 5) + hash + str.charCodeAt(i)) | 0;
+  }
+  return hash.toString(36);
+};
+
+/** Record current classified state as PassVotes for the given stage */
+const recordStageVotes = (
+  classified: readonly ClassifiedDraft[],
+  stage: PassStage
+): void => {
+  for (let i = 0; i < classified.length; i++) {
+    const line = classified[i];
+    traceCollector.addVote(i, {
+      stage,
+      suggestedType: line.type,
+      confidence: line.confidence,
+      reasonCode: line.classificationMethod,
+      metadata: {},
+    });
+  }
+};
 
 let pendingAgentAbortController: AbortController | null = null;
 
@@ -145,9 +199,7 @@ export const PIPELINE_FLAGS = {
   VITERBI_OVERRIDE_ENABLED: true,
   /** Gemini Flash — تعزيز السياق (AI Layer 1) */
   GEMINI_CONTEXT_ENABLED: false,
-  /** Gemini Flash — حل الشبهة (AI Layer 2) */
-  GEMINI_DOUBT_ENABLED: false,
-  /** Claude Agent Review — مراجعة نهائية (AI Layer 3) */
+  /** Claude Agent Review — مراجعة نهائية (AI Layer 2) */
   CLAUDE_REVIEW_ENABLED: false,
 };
 
@@ -279,11 +331,19 @@ export const classifyLines = (
   if (context?.schemaElements && context.schemaElements.length > 0) {
     const schemaDrafts = classifyFromSchemaElements(context.schemaElements);
     if (schemaDrafts.length > 0) {
-      pipelineRecorder.snapshot("schema-style-classify", schemaDrafts, {
-        source: "external-engine",
-        elementCount: schemaDrafts.length,
-      });
-      return schemaDrafts;
+      // ── تنظيف العلامات بعد التصنيف ──
+      const cleaned = schemaDrafts
+        .map((d) => ({ ...d, text: stripLeadingBullets(d.text) }))
+        .filter((d) => d.text.length > 0);
+
+      if (cleaned.length > 0) {
+        pipelineRecorder.trackFile("paste-classifier.ts");
+        pipelineRecorder.snapshot("schema-style-classify", cleaned, {
+          source: "external-engine",
+          elementCount: cleaned.length,
+        });
+        return cleaned;
+      }
     }
     // fallback: إذا لم ينتج schema-style أي نتائج، تابع بالمسار العادي
   }
@@ -380,6 +440,7 @@ export const classifyLines = (
   };
 
   // ── Recorder: بداية run جديد + snapshot أولي ──
+  traceCollector.clear();
   pipelineRecorder.startRun(context?.classificationProfile ?? "paste", {
     textLength: normalizedText.length,
     lineCount: lines.length,
@@ -712,7 +773,9 @@ export const classifyLines = (
   }
 
   // ── Recorder: snapshot بعد الـ forward pass ──
+  pipelineRecorder.trackFile("paste-classifier.ts");
   pipelineRecorder.snapshot("forward-pass", classified);
+  recordStageVotes(classified, "forward");
 
   // ── ممر التصحيح الرجعي (retroactive correction pass) ──
   const _retroCorrections = retroactiveCorrectionPass(
@@ -728,9 +791,11 @@ export const classifyLines = (
   }
 
   // ── Recorder: snapshot بعد الـ retroactive corrector ──
+  pipelineRecorder.trackFile("paste-classifier.ts");
   pipelineRecorder.snapshot("retroactive", classified, {
     corrections: _retroCorrections,
   });
+  recordStageVotes(classified, "retroactive");
 
   // ── ممر التصنيف العكسي (Reverse Classification Pass) + دمج ──
   if (PIPELINE_FLAGS.REVERSE_PASS_ENABLED && dcg) {
@@ -745,7 +810,9 @@ export const classifyLines = (
   }
 
   // ── Recorder: snapshot بعد الـ reverse pass ──
+  pipelineRecorder.trackFile("paste-classifier.ts");
   pipelineRecorder.snapshot("reverse-pass", classified);
+  recordStageVotes(classified, "reverse");
 
   // ── ممر Viterbi للتحسين التسلسلي (Structural Sequence Optimizer) ──
   const preSeeded = memoryManager.getPreSeededCharacters();
@@ -775,8 +842,39 @@ export const classifyLines = (
   }
 
   // ── Recorder: snapshot بعد Viterbi ──
+  pipelineRecorder.trackFile("paste-classifier.ts");
   pipelineRecorder.snapshot("viterbi", classified, {
     disagreements: _seqOptResult.totalDisagreements,
+  });
+  recordStageVotes(classified, "viterbi");
+
+  // ── Suspicion Engine: تحليل الاشتباه والإصلاح المحلي ──
+  const _suspicionTraces = collectTracesFromMap(
+    classified,
+    traceCollector.getAllVotes()
+  );
+  const _suspicionEngine = createDefaultSuspicionEngine();
+  const _suspicionResult = _suspicionEngine.analyze({
+    classifiedLines: classified,
+    traces: _suspicionTraces,
+    sequenceOptimization:
+      _seqOptResult.totalDisagreements > 0
+        ? {
+            disagreements: _seqOptResult.disagreements.map((d) => ({
+              lineIndex: d.lineIndex,
+              suggestedType: d.viterbiType,
+            })),
+          }
+        : null,
+    extractionQuality: null,
+  });
+  const _suspicionFixes = applyPreRenderActions(
+    classified,
+    _suspicionResult.actions
+  );
+  pipelineRecorder.snapshot("suspicion-engine", classified, {
+    cases: _suspicionResult.cases.length,
+    fixes: _suspicionFixes,
   });
 
   // تخزين نتيجة Viterbi على المصفوفة لاستخدامها في agent review
@@ -1414,6 +1512,208 @@ const buildAgentReviewMetaFallback = (
     unresolvedForcedItemIds: toNormalizedMetaIds(unresolvedForcedItemIds),
   };
 };
+
+// ─── Final Review Layer (T012 + T015 + T023–T025 + T027) ─────────────────────
+
+/**
+ * T023 — ترقية حالات agent-candidate → agent-forced عند alternative-pull ≥ 96
+ */
+const promoteHighSeveritySuspicionCases = (
+  cases: readonly SuspicionCase[]
+): SuspicionCase[] =>
+  cases.map((c) => {
+    if (c.band !== "agent-candidate") return c;
+    const hasHighPull = c.signals.some(
+      (s) =>
+        s.signalType === "alternative-pull" &&
+        s.score >= FINAL_REVIEW_PROMOTION_THRESHOLD
+    );
+    if (!hasHighPull) return c;
+    return { ...c, band: "agent-forced" } as SuspicionCase;
+  });
+
+/**
+ * T024 — اختيار الأسطر المرسلة للوكيل مع احترام السقف
+ */
+const selectSuspicionCasesForAgent = (
+  cases: readonly SuspicionCase[],
+  totalReviewed: number
+): SuspicionCase[] => {
+  const cap = Math.ceil(totalReviewed * AGENT_REVIEW_MAX_RATIO);
+  const eligible = cases.filter(
+    (c) => c.band === "agent-candidate" || c.band === "agent-forced"
+  );
+  // agent-forced أولاً، ثم agent-candidate حسب score تنازلياً
+  const sorted = [...eligible].sort((a, b) => {
+    if (a.band === "agent-forced" && b.band !== "agent-forced") return -1;
+    if (b.band === "agent-forced" && a.band !== "agent-forced") return 1;
+    return b.score - a.score;
+  });
+  return sorted.slice(0, cap);
+};
+
+/**
+ * T027 — حساب إحصائيات التوجيه من SuspicionCase[]
+ */
+const computeFinalReviewRoutingStats = (
+  cases: readonly SuspicionCase[]
+): FinalReviewRoutingStats => {
+  let countPass = 0;
+  let countLocalReview = 0;
+  let countAgentCandidate = 0;
+  let countAgentForced = 0;
+  for (const c of cases) {
+    switch (c.band) {
+      case "pass":
+        countPass++;
+        break;
+      case "local-review":
+        countLocalReview++;
+        break;
+      case "agent-candidate":
+        countAgentCandidate++;
+        break;
+      case "agent-forced":
+        countAgentForced++;
+        break;
+    }
+  }
+  return { countPass, countLocalReview, countAgentCandidate, countAgentForced };
+};
+
+/**
+ * هل يجب إرسال الحالة للوكيل (ضمن طبقة المراجعة النهائية)
+ */
+const shouldEscalateSuspicionCaseToAgent = (c: SuspicionCase): boolean => {
+  if (c.band === "agent-forced") return true;
+  if (c.critical) return true;
+  if (c.score >= 85) return true;
+  const families = new Set(c.signals.map((s) => s.family));
+  if (families.size >= 2) return true;
+  if (
+    c.primarySuggestedType &&
+    c.primarySuggestedType !== c.classifiedLine.type
+  )
+    return true;
+  return false;
+};
+
+/**
+ * T012 + T015 + T025 — طبقة المراجعة النهائية
+ *
+ * تستقبل قائمة الأسطر المصنّفة + حالات الاشتباه من محرك الاشتباه،
+ * وترسل المشبوهات منها إلى نقطة النهاية `/api/final-review`،
+ * ثم تطبّق أوامر `relabel` المُرجَعة على القائمة.
+ */
+export const applyFinalReviewLayer = async (
+  classified: ClassifiedDraftWithId[],
+  suspicionCases: readonly SuspicionCase[],
+  importOpId: string,
+  sessionId: string
+): Promise<{
+  classified: ClassifiedDraftWithId[];
+  stats: FinalReviewRoutingStats;
+}> => {
+  // T023: ترقية الحالات ذات alternative-pull العالي
+  const promoted = promoteHighSeveritySuspicionCases(suspicionCases);
+
+  // T027: حساب الإحصائيات
+  const stats = computeFinalReviewRoutingStats(promoted);
+
+  // T024: اختيار الحالات ضمن سقف النسبة
+  const selected = selectSuspicionCasesForAgent(promoted, classified.length);
+
+  if (selected.length === 0 || !FINAL_REVIEW_ENDPOINT) {
+    return { classified, stats };
+  }
+
+  // T013 + T015: بناء حمولة كل سطر مشبوه
+  const suspiciousLines: FinalReviewSuspiciousLinePayload[] = [];
+  for (const c of selected) {
+    if (!shouldEscalateSuspicionCaseToAgent(c)) continue;
+    const payload = buildFinalReviewSuspiciousLinePayload({
+      suspicionCase: c,
+      classified,
+      itemId: `item-${c.lineIndex}`,
+      fingerprint: `${c.classifiedLine.type}:${c.lineIndex}`,
+    });
+    if (payload) suspiciousLines.push(payload);
+  }
+
+  if (suspiciousLines.length === 0) {
+    return { classified, stats };
+  }
+
+  const requiredItemIds = suspiciousLines.map((l) => l.itemId);
+  const forcedItemIds = suspiciousLines
+    .filter((l) => l.routingBand === "agent-forced")
+    .map((l) => l.itemId);
+
+  const requestPayload: FinalReviewRequestPayload = {
+    packetVersion: "suspicion-final-review-v1",
+    schemaVersion: "arabic-screenplay-classifier-output-v1",
+    importOpId,
+    sessionId,
+    totalReviewed: classified.length,
+    suspiciousLines,
+    requiredItemIds,
+    forcedItemIds,
+    schemaHints: DEFAULT_FINAL_REVIEW_SCHEMA_HINTS,
+    reviewPacketText: formatFinalReviewPacketText({
+      totalReviewed: classified.length,
+      requiredItemIds,
+      forcedItemIds,
+      suspiciousLines,
+    }),
+  };
+
+  // إرسال الطلب
+  try {
+    const { default: axios } = await import("axios");
+    const response = await axios.post<FinalReviewResponsePayload>(
+      FINAL_REVIEW_ENDPOINT,
+      requestPayload,
+      { timeout: 180_000 }
+    );
+
+    const data = response.data;
+    if (
+      data.status === "error" ||
+      !data.commands ||
+      data.commands.length === 0
+    ) {
+      return { classified, stats };
+    }
+
+    // تطبيق أوامر relabel
+    const result: ClassifiedDraftWithId[] = [...classified];
+    for (const cmd of data.commands) {
+      if (cmd.op === "relabel") {
+        const lineIndex = suspiciousLines.find(
+          (l) => l.itemId === cmd.itemId
+        )?.lineIndex;
+        if (
+          lineIndex !== undefined &&
+          lineIndex >= 0 &&
+          lineIndex < result.length
+        ) {
+          const original = result[lineIndex];
+          if (original) {
+            result[lineIndex] = {
+              ...original,
+              type: cmd.newType,
+            } as ClassifiedDraftWithId;
+          }
+        }
+      }
+    }
+    return { classified: result, stats };
+  } catch {
+    return { classified, stats };
+  }
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
 
 /**
  * تطبيق مراجعة الوكيل عن بُعد (V2 مع Command API).
@@ -2284,147 +2584,190 @@ export const applyPasteClassifierFlowToView = async (
   text: string,
   options?: ApplyPasteClassifierFlowOptions
 ): Promise<boolean> => {
-  const customReview = options?.agentReview;
-  const classificationProfile = options?.classificationProfile;
-  const sourceFileType = options?.sourceFileType;
-  const sourceMethod = options?.sourceMethod;
-  const structuredHints = options?.structuredHints;
-  let schemaElements = options?.schemaElements;
+  // ── Re-entry guard ──
+  if (pipelineRunning) {
+    agentReviewLogger.warn("pipeline-reentry-blocked", {});
+    return false;
+  }
 
-  // ── Phase -1: جلب schema elements من المحرك عند اللصق ──
+  // ── Text dedup ──
+  const textHash = simpleHash(text);
   if (
-    !schemaElements &&
-    classificationProfile === "paste" &&
-    TEXT_EXTRACT_ENDPOINT
+    textHash === lastProcessedHash &&
+    performance.now() - lastProcessedAt < DEDUP_WINDOW_MS
   ) {
-    const engineController = new AbortController();
-    try {
-      const response = await fetchWithTimeout(
-        TEXT_EXTRACT_ENDPOINT,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ text }),
-        },
-        engineController,
-        10_000
-      );
-      if (response.ok) {
-        const body = (await response.json()) as {
-          success?: boolean;
-          data?: { schemaElements?: readonly SchemaElementInput[] };
-        };
-        if (
-          body?.success &&
-          Array.isArray(body.data?.schemaElements) &&
-          body.data.schemaElements.length > 0
-        ) {
-          schemaElements = body.data.schemaElements;
-          agentReviewLogger.telemetry("paste-pipeline-stage", {
-            stage: "engine-text-extract-success",
-            elementCount: schemaElements.length,
-          });
+    agentReviewLogger.telemetry("pipeline-dedup-skip", { hash: textHash });
+    return false;
+  }
+
+  pipelineRunning = true;
+  try {
+    const customReview = options?.agentReview;
+    const classificationProfile = options?.classificationProfile;
+    const sourceFileType = options?.sourceFileType;
+    const sourceMethod = options?.sourceMethod;
+    const structuredHints = options?.structuredHints;
+    let schemaElements = options?.schemaElements;
+
+    // ── Phase -1: جلب schema elements من المحرك عند اللصق ──
+    const bridgeStart = performance.now();
+    if (
+      !schemaElements &&
+      classificationProfile === "paste" &&
+      TEXT_EXTRACT_ENDPOINT
+    ) {
+      const engineController = new AbortController();
+      try {
+        const response = await fetchWithTimeout(
+          TEXT_EXTRACT_ENDPOINT,
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ text }),
+          },
+          engineController,
+          10_000
+        );
+        if (response.ok) {
+          const body = (await response.json()) as {
+            success?: boolean;
+            data?: { schemaElements?: readonly SchemaElementInput[] };
+          };
+          if (
+            body?.success &&
+            Array.isArray(body.data?.schemaElements) &&
+            body.data.schemaElements.length > 0
+          ) {
+            schemaElements = body.data.schemaElements;
+            agentReviewLogger.telemetry("paste-pipeline-stage", {
+              stage: "engine-text-extract-success",
+              elementCount: schemaElements.length,
+            });
+            pipelineRecorder.logBridgeCall(
+              "paste",
+              schemaElements.length,
+              Math.round(performance.now() - bridgeStart)
+            );
+          }
         }
+      } catch (engineError) {
+        agentReviewLogger.warn("engine-text-extract-failed", {
+          error:
+            engineError instanceof Error
+              ? engineError.message
+              : String(engineError),
+        });
+        // fallback: يكمل بالتصنيف المحلي العادي
       }
-    } catch (engineError) {
-      agentReviewLogger.warn("engine-text-extract-failed", {
-        error:
-          engineError instanceof Error
-            ? engineError.message
-            : String(engineError),
-      });
-      // fallback: يكمل بالتصنيف المحلي العادي
     }
-  }
 
-  // ── Phase 0: التصنيف المحلي ──
-  const initiallyClassified = classifyLines(text, {
-    classificationProfile,
-    sourceFileType,
-    sourceMethod,
-    structuredHints,
-    schemaElements,
-  });
-  const locallyReviewed = applyAgentReview(initiallyClassified, customReview);
-
-  if (locallyReviewed.length === 0 || view.isDestroyed) return false;
-
-  agentReviewLogger.telemetry("paste-pipeline-stage", {
-    stage: "frontend-classify-complete",
-    totalLines: locallyReviewed.length,
-    sourceFileType,
-    sourceMethod,
-  });
-
-  // ── Phase 0.5: عرض فوري (Render-First) ──
-  const nodes = classifiedToNodes(locallyReviewed, view.state.schema);
-  if (nodes.length === 0) return false;
-
-  const fragment = Fragment.from(nodes);
-  const slice = new Slice(fragment, 0, 0);
-  const from = options?.from ?? view.state.selection.from;
-  const to = options?.to ?? view.state.selection.to;
-  const tr = view.state.tr;
-  tr.replaceRange(from, to, slice);
-  view.dispatch(tr);
-
-  agentReviewLogger.telemetry("paste-pipeline-stage", {
-    stage: "frontend-render-first",
-    nodesApplied: nodes.length,
-  });
-
-  // ── Recorder: snapshot بعد العرض الفوري ──
-  pipelineRecorder.snapshot("render-first", locallyReviewed, {
-    nodesRendered: nodes.length,
-  });
-
-  // ── رسالة مؤقتة على الشاشة (TODO: شيلها بعد التجربة) ──
-  if (typeof window !== "undefined") {
-    const enabledFlags = Object.entries(PIPELINE_FLAGS)
-      .filter(([, v]) => v)
-      .map(([k]) => k);
-    const flagsText =
-      enabledFlags.length > 0 ? enabledFlags.join(", ") : "الكل OFF (baseline)";
-    const banner = document.createElement("div");
-    banner.textContent = `✅ Pipeline تم — ${nodes.length} سطر | الطبقات: ${flagsText}`;
-    Object.assign(banner.style, {
-      position: "fixed",
-      top: "12px",
-      left: "50%",
-      transform: "translateX(-50%)",
-      background: "#1a1a2e",
-      color: "#00ff88",
-      padding: "10px 24px",
-      borderRadius: "8px",
-      fontSize: "14px",
-      fontWeight: "600",
-      zIndex: "99999",
-      border: "1px solid #00ff8844",
-      direction: "rtl",
-      fontFamily: "monospace",
+    // ── Phase 0: التصنيف المحلي ──
+    // رصد البريدج لو الـ schemaElements جاية من file import (البريدج اتعمل في الباك إند)
+    if (
+      schemaElements &&
+      schemaElements.length > 0 &&
+      classificationProfile !== "paste"
+    ) {
+      pipelineRecorder.logBridgeCall(
+        classificationProfile ?? "file-import",
+        schemaElements.length,
+        Math.round(performance.now() - bridgeStart)
+      );
+    }
+    const initiallyClassified = classifyLines(text, {
+      classificationProfile,
+      sourceFileType,
+      sourceMethod,
+      structuredHints,
+      schemaElements,
     });
-    document.body.appendChild(banner);
-    setTimeout(() => banner.remove(), 5000);
-  }
+    const locallyReviewed = applyAgentReview(initiallyClassified, customReview);
 
-  // ── Phase 1–4: AI layers + Claude في الـ background ──
-  // لا ننتظرها — بتشتغل async وبتحدّث المحرر تدريجياً
-  void runAIEnhancementPipeline(view, locallyReviewed).catch((error) => {
-    const message = error instanceof Error ? error.message : String(error);
-    agentReviewLogger.error("ai-enhancement-pipeline-error", {
-      error: message,
+    if (locallyReviewed.length === 0 || view.isDestroyed) return false;
+
+    agentReviewLogger.telemetry("paste-pipeline-stage", {
+      stage: "frontend-classify-complete",
+      totalLines: locallyReviewed.length,
+      sourceFileType,
+      sourceMethod,
     });
-  });
 
-  return true;
+    // ── Phase 0.5: عرض فوري (Render-First) ──
+    const nodes = classifiedToNodes(locallyReviewed, view.state.schema);
+    if (nodes.length === 0) return false;
+
+    const fragment = Fragment.from(nodes);
+    const slice = new Slice(fragment, 0, 0);
+    const from = options?.from ?? view.state.selection.from;
+    const to = options?.to ?? view.state.selection.to;
+    const tr = view.state.tr;
+    tr.replaceRange(from, to, slice);
+    view.dispatch(tr);
+
+    agentReviewLogger.telemetry("paste-pipeline-stage", {
+      stage: "frontend-render-first",
+      nodesApplied: nodes.length,
+    });
+
+    // ── Recorder: snapshot بعد العرض الفوري ──
+    pipelineRecorder.trackFile("paste-classifier.ts");
+    pipelineRecorder.snapshot("render-first", locallyReviewed, {
+      nodesRendered: nodes.length,
+    });
+
+    // ── رسالة مؤقتة على الشاشة (TODO: شيلها بعد التجربة) ──
+    if (typeof window !== "undefined") {
+      const enabledFlags = Object.entries(PIPELINE_FLAGS)
+        .filter(([, v]) => v)
+        .map(([k]) => k);
+      const flagsText =
+        enabledFlags.length > 0
+          ? enabledFlags.join(", ")
+          : "الكل OFF (baseline)";
+      const banner = document.createElement("div");
+      banner.textContent = `✅ Pipeline تم — ${nodes.length} سطر | الطبقات: ${flagsText}`;
+      Object.assign(banner.style, {
+        position: "fixed",
+        top: "12px",
+        left: "50%",
+        transform: "translateX(-50%)",
+        background: "#1a1a2e",
+        color: "#00ff88",
+        padding: "10px 24px",
+        borderRadius: "8px",
+        fontSize: "14px",
+        fontWeight: "600",
+        zIndex: "99999",
+        border: "1px solid #00ff8844",
+        direction: "rtl",
+        fontFamily: "monospace",
+      });
+      document.body.appendChild(banner);
+      setTimeout(() => banner.remove(), 5000);
+    }
+
+    // ── Phase 1–4: AI layers + Claude في الـ background ──
+    // لا ننتظرها — بتشتغل async وبتحدّث المحرر تدريجياً
+    void runAIEnhancementPipeline(view, locallyReviewed).catch((error) => {
+      const message = error instanceof Error ? error.message : String(error);
+      agentReviewLogger.error("ai-enhancement-pipeline-error", {
+        error: message,
+      });
+    });
+
+    lastProcessedHash = textHash;
+    lastProcessedAt = performance.now();
+    return true;
+  } finally {
+    pipelineRunning = false;
+  }
 };
 
 /**
  * AI Enhancement Pipeline — يشتغل في الـ background بعد العرض الفوري.
  *
  * 1) Gemini Flash — تعزيز السياق
- * 2) Kimi 2.5 — حل الشبهة
- * 3) Claude Agent Review — مراجعة نهائية
+ * 2) Claude Agent Review — مراجعة نهائية
  *
  * كل طبقة بتطبق تصحيحاتها تدريجياً عبر ProgressiveUpdateSession.
  */
@@ -2441,7 +2784,7 @@ const runAIEnhancementPipeline = async (
   const updateSession = progressiveUpdater.createSession(sessionId, {
     minConfidenceThreshold: 0.65,
     allowLayerOverride: true,
-    layerPriority: ["claude-review", "gemini-doubt", "gemini-context"],
+    layerPriority: ["claude-review", "gemini-context"],
   });
 
   // تحويل التصنيفات لصيغة ClassifiedLine للطبقات
@@ -2472,6 +2815,7 @@ const runAIEnhancementPipeline = async (
       });
 
       // ── Recorder: snapshot بعد Gemini context ──
+      pipelineRecorder.trackFile("paste-classifier.ts");
       pipelineRecorder.snapshot("gemini-context", locallyReviewed, {
         totalCorrections: contextResult.totalCorrections,
         appliedCorrections: contextResult.appliedCorrections,
@@ -2486,69 +2830,9 @@ const runAIEnhancementPipeline = async (
 
     if (view.isDestroyed) return;
 
-    // ── Phase 2: Gemini Flash — حل الشبهة (streaming) ──
-    if (PIPELINE_FLAGS.GEMINI_DOUBT_ENABLED) {
-      // بنحتاج نبني حزمة الشبهة من الكواشف الحالية
-      const storedSeqOpt = (
-        locallyReviewed as ClassifiedDraftWithId[] & {
-          _sequenceOptimization?: SequenceOptimizationResult;
-        }
-      )._sequenceOptimization;
-
-      const reviewer = new PostClassificationReviewer(
-        storedSeqOpt?.disagreements?.length
-          ? { viterbiDisagreements: storedSeqOpt.disagreements }
-          : undefined
-      );
-
-      const reviewInput = toClassifiedLineRecords(locallyReviewed);
-      const reviewPacket = reviewer.review(reviewInput);
-
-      if (reviewPacket.suspiciousLines.length > 0) {
-        agentReviewLogger.telemetry("paste-pipeline-stage", {
-          stage: "gemini-doubt-start",
-          suspiciousCount: reviewPacket.suspiciousLines.length,
-        });
-
-        const doubtResult = await requestDoubtResolution({
-          sessionId,
-          suspiciousLines: reviewPacket.suspiciousLines,
-          updateSession,
-          view,
-          signal: abortController.signal,
-        });
-
-        agentReviewLogger.telemetry("paste-pipeline-stage", {
-          stage: "gemini-doubt-complete",
-          totalVerdicts: doubtResult.totalVerdicts,
-          appliedCorrections: doubtResult.appliedCorrections,
-          confirmedCount: doubtResult.confirmedCount,
-          relabeledCount: doubtResult.relabeledCount,
-          latencyMs: doubtResult.latencyMs,
-          success: doubtResult.success,
-        });
-        // ── Recorder: snapshot بعد Gemini doubt ──
-        pipelineRecorder.snapshot("gemini-doubt", locallyReviewed, {
-          totalVerdicts: doubtResult.totalVerdicts,
-          appliedCorrections: doubtResult.appliedCorrections,
-          latencyMs: doubtResult.latencyMs,
-        });
-      } else {
-        agentReviewLogger.telemetry("paste-pipeline-stage", {
-          stage: "gemini-doubt-skipped",
-          reason: "no-suspicious-lines",
-        });
-      }
-    } else {
-      agentReviewLogger.telemetry("paste-pipeline-stage", {
-        stage: "gemini-doubt-skipped",
-        reason: "GEMINI_DOUBT_ENABLED=false",
-      });
-    }
-
     if (view.isDestroyed) return;
 
-    // ── Phase 3: Claude Agent Review — مراجعة نهائية ──
+    // ── Phase 2: Claude Agent Review — مراجعة نهائية ──
     if (PIPELINE_FLAGS.CLAUDE_REVIEW_ENABLED) {
       agentReviewLogger.telemetry("paste-pipeline-stage", {
         stage: "claude-review-start",
@@ -2582,6 +2866,7 @@ const runAIEnhancementPipeline = async (
         });
       }
       // ── Recorder: snapshot بعد Claude review ──
+      pipelineRecorder.trackFile("paste-classifier.ts");
       pipelineRecorder.snapshot("claude-review", locallyReviewed);
     } else {
       agentReviewLogger.telemetry("paste-pipeline-stage", {

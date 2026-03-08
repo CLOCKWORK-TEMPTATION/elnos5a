@@ -50,7 +50,7 @@ def validate_elements(elements: List[Tuple[State, str]]) -> List[ValidationIssue
             issues.append({"lineIndex": i, "kind": "scene-number-tail-combined", "text": stripped})
 
         if split_scene_header_action(stripped):
-            kind = "scene_header_3-contains-action" if state == State.scene_header_3 else "scene-header-action-combined"
+            kind = "scene_header_3-contains-action" if state == State.SCENE_HEADER_3 else "scene-header-action-combined"
             issues.append({"lineIndex": i, "kind": kind, "text": stripped})
 
         if split_dialogue_action(stripped):

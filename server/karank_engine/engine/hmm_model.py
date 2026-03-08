@@ -18,7 +18,7 @@ INITIAL_PROB: Dict[State, float] = {
     State.BASMALA: LOG_SURE,
     State.SCENE_HEADER_1: LOG_MED,
     State.SCENE_HEADER_2: LOG_ZERO,
-    State.scene_header_3: LOG_ZERO,
+    State.SCENE_HEADER_3: LOG_ZERO,
     State.ACTION: LOG_ZERO,
     State.CHARACTER: LOG_ZERO,
     State.PARENTHETICAL: LOG_ZERO,
@@ -46,12 +46,12 @@ _set_transitions(State.SCENE_HEADER_1, {
 })
 
 _set_transitions(State.SCENE_HEADER_2, {
-    State.scene_header_3: LOG_HIGH,
+    State.SCENE_HEADER_3: LOG_HIGH,
     State.ACTION: LOG_MED,
     State.CHARACTER: LOG_LOW,
 })
 
-_set_transitions(State.scene_header_3, {
+_set_transitions(State.SCENE_HEADER_3, {
     State.ACTION: LOG_HIGH,
     State.CHARACTER: LOG_MED,
 })
@@ -117,7 +117,7 @@ def emission_prob(state: State, features: Dict[str, Any]) -> float:
             return LOG_LOW
         return LOG_ZERO
  
-    if state == State.scene_header_3:
+    if state == State.SCENE_HEADER_3:
         if features["looks_like_scene_location"]:
             if not features["character"] and not features["transition"]:
                 return LOG_SURE if features["is_short"] else LOG_HIGH

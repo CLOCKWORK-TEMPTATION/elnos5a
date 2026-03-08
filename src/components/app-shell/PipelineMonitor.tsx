@@ -16,6 +16,7 @@ interface StageEntry {
   latencyMs: number;
   timestamp: number;
   metadata?: Record<string, unknown>;
+  activeFiles: string[];
 }
 
 interface RunState {
@@ -34,6 +35,7 @@ interface RunState {
 // ─── ثوابت المراحل ──────────────────────────────────────────────────
 
 const STAGE_META: Record<string, { label: string; icon: string }> = {
+  "engine-bridge": { label: "البريدج", icon: "🌉" },
   "schema-style-classify": { label: "تصنيف Schema", icon: "📐" },
   "forward-pass": { label: "التمرير الأمامي", icon: "➡️" },
   retroactive: { label: "التصحيح الرجعي", icon: "🔄" },
@@ -41,7 +43,6 @@ const STAGE_META: Record<string, { label: string; icon: string }> = {
   viterbi: { label: "Viterbi", icon: "🧬" },
   "render-first": { label: "العرض الأول", icon: "🖥️" },
   "gemini-context": { label: "Gemini سياق", icon: "🤖" },
-  "gemini-doubt": { label: "Gemini شك", icon: "🔍" },
   "claude-review": { label: "Claude مراجعة", icon: "🧠" },
 };
 
@@ -56,9 +57,9 @@ const ProgressBar: React.FC<{ current: number; total: number }> = ({
 }) => {
   const pct = total > 0 ? Math.round((current / total) * 100) : 0;
   return (
-    <div className="h-1.5 w-full rounded-full bg-zinc-800 overflow-hidden">
+    <div className="h-1.5 w-full overflow-hidden rounded-full bg-zinc-800">
       <div
-        className="h-full rounded-full transition-all duration-300 bg-gradient-to-l from-cyan-400 to-blue-600"
+        className="h-full rounded-full bg-gradient-to-l from-cyan-400 to-blue-600 transition-all duration-300"
         style={{ width: `${pct}%` }}
       />
     </div>
@@ -74,37 +75,51 @@ const StageRow: React.FC<{
 }> = ({ entry, isActive, isLast }) => {
   const meta = getStageMeta(entry.stage);
   return (
-    <div
-      className={`flex items-center gap-2 px-3 py-1.5 rounded-md text-xs transition-colors ${
-        isActive
-          ? "bg-cyan-950/60 border border-cyan-700/40"
-          : isLast
-            ? "bg-zinc-800/60"
-            : "bg-transparent"
-      }`}
-    >
-      <span className="text-sm shrink-0">{meta.icon}</span>
-      <span className="font-medium text-zinc-200 min-w-[100px]">
-        {meta.label}
-      </span>
-      <span className="text-zinc-500 tabular-nums">{entry.lineCount} سطر</span>
-      {entry.changes > 0 && (
-        <span className="text-amber-400 tabular-nums">
-          Δ{entry.changes}
+    <>
+      <div
+        className={`flex items-center gap-2 rounded-md px-3 py-1.5 text-xs transition-colors ${
+          isActive
+            ? "border border-cyan-700/40 bg-cyan-950/60"
+            : isLast
+              ? "bg-zinc-800/60"
+              : "bg-transparent"
+        }`}
+      >
+        <span className="shrink-0 text-sm">{meta.icon}</span>
+        <span className="min-w-[100px] font-medium text-zinc-200">
+          {meta.label}
         </span>
-      )}
-      {entry.latencyMs > 0 && (
-        <span className="text-zinc-600 tabular-nums ms-auto">
-          {entry.latencyMs}ms
+        <span className="tabular-nums text-zinc-500">
+          {entry.lineCount} سطر
         </span>
+        {entry.changes > 0 && (
+          <span className="tabular-nums text-amber-400">Δ{entry.changes}</span>
+        )}
+        {entry.latencyMs > 0 && (
+          <span className="ms-auto tabular-nums text-zinc-600">
+            {entry.latencyMs}ms
+          </span>
+        )}
+        {isActive && (
+          <span className="relative ms-1 flex h-2 w-2">
+            <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-cyan-400 opacity-60" />
+            <span className="relative inline-flex h-2 w-2 rounded-full bg-cyan-400" />
+          </span>
+        )}
+      </div>
+      {entry.activeFiles.length > 0 && (
+        <div className="-mt-0.5 flex flex-wrap gap-1 px-3 pb-1">
+          {entry.activeFiles.map((f) => (
+            <span
+              key={f}
+              className="rounded bg-zinc-800/80 px-1.5 py-0.5 font-mono text-[9px] text-cyan-400/70"
+            >
+              {f}
+            </span>
+          ))}
+        </div>
       )}
-      {isActive && (
-        <span className="relative flex h-2 w-2 ms-1">
-          <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-cyan-400 opacity-60" />
-          <span className="relative inline-flex rounded-full h-2 w-2 bg-cyan-400" />
-        </span>
-      )}
-    </div>
+    </>
   );
 };
 
@@ -122,15 +137,13 @@ const TYPE_COLORS: Record<string, string> = {
   basmala: "bg-teal-500",
 };
 
-const TypeDistBar: React.FC<{ dist: Record<string, number> }> = ({
-  dist,
-}) => {
+const TypeDistBar: React.FC<{ dist: Record<string, number> }> = ({ dist }) => {
   const total = Object.values(dist).reduce((a, b) => a + b, 0);
   if (total === 0) return null;
   const entries = Object.entries(dist).sort(([, a], [, b]) => b - a);
   return (
     <div className="space-y-1">
-      <div className="flex h-2 rounded-full overflow-hidden gap-px">
+      <div className="flex h-2 gap-px overflow-hidden rounded-full">
         {entries.map(([type, count]) => (
           <div
             key={type}
@@ -144,7 +157,7 @@ const TypeDistBar: React.FC<{ dist: Record<string, number> }> = ({
         {entries.map(([type, count]) => (
           <span key={type} className="flex items-center gap-1">
             <span
-              className={`inline-block w-1.5 h-1.5 rounded-full ${TYPE_COLORS[type] ?? "bg-zinc-500"}`}
+              className={`inline-block h-1.5 w-1.5 rounded-full ${TYPE_COLORS[type] ?? "bg-zinc-500"}`}
             />
             {type.replace(/_/g, " ")} ({count})
           </span>
@@ -164,7 +177,6 @@ const KNOWN_STAGES = [
   "viterbi",
   "render-first",
   "gemini-context",
-  "gemini-doubt",
   "claude-review",
 ];
 
@@ -206,7 +218,9 @@ export const PipelineMonitor: React.FC<{
             finalTypeDist: {},
           });
           setElapsed(0);
-          addLog(`▶ بداية run — المصدر: ${event.source} | ${event.input.lineCount} سطر`);
+          addLog(
+            `▶ بداية run — المصدر: ${event.source} | ${event.input.lineCount} سطر`
+          );
           break;
 
         case "snapshot":
@@ -223,12 +237,13 @@ export const PipelineMonitor: React.FC<{
                   latencyMs: event.latencyMs,
                   timestamp: performance.now(),
                   metadata: event.metadata,
+                  activeFiles: event.activeFiles,
                 },
               ],
             };
           });
           addLog(
-            `${getStageMeta(event.stage).icon} ${getStageMeta(event.stage).label} — ${event.lineCount} سطر${event.changes > 0 ? ` | ${event.changes} تغيير` : ""}${event.latencyMs > 0 ? ` | ${event.latencyMs}ms` : ""}`
+            `${getStageMeta(event.stage).icon} ${getStageMeta(event.stage).label} — ${event.lineCount} سطر${event.changes > 0 ? ` | ${event.changes} تغيير` : ""}${event.latencyMs > 0 ? ` | ${event.latencyMs}ms` : ""}${event.activeFiles.length > 0 ? `\n    📁 ${event.activeFiles.join(" · ")}` : ""}`
           );
           break;
 
@@ -259,6 +274,24 @@ export const PipelineMonitor: React.FC<{
             `✅ اكتمل في ${(event.totalDurationMs / 1000).toFixed(1)}s — ${event.totalVerdicts} تصحيح AI`
           );
           break;
+
+        case "engine-bridge":
+          addLog(
+            `🌉 البريدج — المصدر: ${event.source} | ${event.elementCount} عنصر | ${event.latencyMs}ms`
+          );
+          break;
+
+        case "file-open":
+          addLog(
+            `📂 فتح ملف: ${event.fileName} (نوع: ${event.fileType} | وضع: ${event.mode})`
+          );
+          break;
+
+        case "file-extract-done":
+          addLog(
+            `📦 استخراج: ${event.fileName} — طريقة: ${event.method}${event.usedOcr ? " (OCR)" : ""} | ${event.textLength} حرف | ${event.schemaElementCount} عنصر schema | ${event.latencyMs}ms`
+          );
+          break;
       }
     });
 
@@ -282,45 +315,73 @@ export const PipelineMonitor: React.FC<{
 
   // Auto-scroll log
   useEffect(() => {
-    logRef.current?.scrollTo({ top: logRef.current.scrollHeight, behavior: "smooth" });
+    logRef.current?.scrollTo({
+      top: logRef.current.scrollHeight,
+      behavior: "smooth",
+    });
   }, [logEntries]);
 
   if (!visible) return null;
 
   const completedStages = run?.stages.map((s) => s.stage) ?? [];
   const activeStageIndex = run && !run.finished ? completedStages.length : -1;
-  const appliedCorrections = run?.aiCorrections.filter((c) => c.applied).length ?? 0;
+  const appliedCorrections =
+    run?.aiCorrections.filter((c) => c.applied).length ?? 0;
+
+  const downloadLog = () => {
+    if (logEntries.length === 0) return;
+    const header = run
+      ? `Pipeline Run: ${run.runId}\nSource: ${run.source}\nLines: ${run.inputLines} | Chars: ${run.inputChars}\nDuration: ${run.finished ? `${(run.totalDurationMs / 1000).toFixed(1)}s` : "in-progress"}\n${"─".repeat(50)}\n\n`
+      : "";
+    const blob = new Blob([header + logEntries.join("\n")], {
+      type: "text/plain;charset=utf-8",
+    });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `pipeline-log-${new Date().toISOString().slice(0, 19).replace(/:/g, "-")}.txt`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
 
   return (
     <div
       ref={panelRef}
       dir="rtl"
-      className="fixed bottom-4 left-4 z-[9999] w-[420px] max-h-[85vh] rounded-xl border border-zinc-700/50 bg-zinc-900/95 backdrop-blur-xl shadow-2xl shadow-black/40 flex flex-col overflow-hidden select-none"
+      className="fixed bottom-4 left-4 z-[9999] flex max-h-[85vh] w-[420px] select-none flex-col overflow-hidden rounded-xl border border-zinc-700/50 bg-zinc-900/95 shadow-2xl shadow-black/40 backdrop-blur-xl"
     >
       {/* ── Header ── */}
-      <div className="flex items-center justify-between px-4 py-2.5 border-b border-zinc-800">
+      <div className="flex items-center justify-between border-b border-zinc-800 px-4 py-2.5">
         <div className="flex items-center gap-2">
           <span className="text-base">📡</span>
           <span className="text-sm font-semibold text-zinc-200">
             مراقب الـ Pipeline
           </span>
           {run && !run.finished && (
-            <span className="text-[10px] text-cyan-400 tabular-nums animate-pulse">
+            <span className="animate-pulse text-[10px] tabular-nums text-cyan-400">
               LIVE
             </span>
           )}
         </div>
         <div className="flex items-center gap-2">
           {run && (
-            <span className="text-[10px] text-zinc-500 tabular-nums">
+            <span className="text-[10px] tabular-nums text-zinc-500">
               {run.finished
                 ? `${(run.totalDurationMs / 1000).toFixed(1)}s`
                 : `${(elapsed / 1000).toFixed(1)}s`}
             </span>
           )}
           <button
+            onClick={downloadLog}
+            disabled={logEntries.length === 0}
+            className="px-1 text-sm leading-none text-zinc-500 transition-colors hover:text-zinc-300 disabled:cursor-not-allowed disabled:opacity-30"
+            title="تحميل السجل"
+          >
+            ⬇
+          </button>
+          <button
             onClick={onClose}
-            className="text-zinc-500 hover:text-zinc-300 text-lg leading-none px-1 transition-colors"
+            className="px-1 text-lg leading-none text-zinc-500 transition-colors hover:text-zinc-300"
             title="إغلاق (Ctrl+Shift+M)"
           >
             ✕
@@ -330,12 +391,19 @@ export const PipelineMonitor: React.FC<{
 
       {/* ── Run Info ── */}
       {run ? (
-        <div className="px-4 py-2 text-[11px] text-zinc-400 border-b border-zinc-800/50 space-y-1">
+        <div className="space-y-1 border-b border-zinc-800/50 px-4 py-2 text-[11px] text-zinc-400">
           <div className="flex justify-between">
-            <span>المصدر: <span className="text-zinc-300">{run.source}</span></span>
-            <span>{run.inputLines} سطر · {run.inputChars} حرف</span>
+            <span>
+              المصدر: <span className="text-zinc-300">{run.source}</span>
+            </span>
+            <span>
+              {run.inputLines} سطر · {run.inputChars} حرف
+            </span>
           </div>
-          <ProgressBar current={completedStages.length} total={KNOWN_STAGES.length} />
+          <ProgressBar
+            current={completedStages.length}
+            total={KNOWN_STAGES.length}
+          />
         </div>
       ) : (
         <div className="px-4 py-6 text-center text-xs text-zinc-600">
@@ -345,7 +413,7 @@ export const PipelineMonitor: React.FC<{
 
       {/* ── Stages ── */}
       {run && (
-        <div className="px-3 py-2 space-y-1 border-b border-zinc-800/50 max-h-[220px] overflow-y-auto">
+        <div className="max-h-[220px] space-y-1 overflow-y-auto border-b border-zinc-800/50 px-3 py-2">
           {KNOWN_STAGES.map((stageKey, idx) => {
             const entry = run.stages.find((s) => s.stage === stageKey);
             const isActive = idx === activeStageIndex;
@@ -367,25 +435,27 @@ export const PipelineMonitor: React.FC<{
             return (
               <div
                 key={stageKey}
-                className={`flex items-center gap-2 px-3 py-1.5 rounded-md text-xs ${
-                  isActive
-                    ? "bg-cyan-950/30 border border-cyan-800/30"
-                    : ""
+                className={`flex items-center gap-2 rounded-md px-3 py-1.5 text-xs ${
+                  isActive ? "border border-cyan-800/30 bg-cyan-950/30" : ""
                 }`}
               >
-                <span className={`text-sm shrink-0 ${isPending ? "opacity-30" : "opacity-20"}`}>
+                <span
+                  className={`shrink-0 text-sm ${isPending ? "opacity-30" : "opacity-20"}`}
+                >
                   {meta.icon}
                 </span>
-                <span className={`font-medium min-w-[100px] ${isPending ? "text-zinc-600" : "text-zinc-700 line-through"}`}>
+                <span
+                  className={`min-w-[100px] font-medium ${isPending ? "text-zinc-600" : "text-zinc-700 line-through"}`}
+                >
                   {meta.label}
                 </span>
                 {isSkipped && (
-                  <span className="text-zinc-700 text-[10px]">تخطي</span>
+                  <span className="text-[10px] text-zinc-700">تخطي</span>
                 )}
                 {isActive && (
-                  <span className="relative flex h-2 w-2 ms-auto">
-                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-cyan-400 opacity-60" />
-                    <span className="relative inline-flex rounded-full h-2 w-2 bg-cyan-400" />
+                  <span className="relative ms-auto flex h-2 w-2">
+                    <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-cyan-400 opacity-60" />
+                    <span className="relative inline-flex h-2 w-2 rounded-full bg-cyan-400" />
                   </span>
                 )}
               </div>
@@ -396,7 +466,7 @@ export const PipelineMonitor: React.FC<{
 
       {/* ── AI Corrections Summary ── */}
       {run && run.aiCorrections.length > 0 && (
-        <div className="px-4 py-2 border-b border-zinc-800/50 text-[11px]">
+        <div className="border-b border-zinc-800/50 px-4 py-2 text-[11px]">
           <span className="text-zinc-400">
             تصحيحات AI:{" "}
             <span className="text-emerald-400">{appliedCorrections} مطبّق</span>
@@ -410,7 +480,7 @@ export const PipelineMonitor: React.FC<{
 
       {/* ── Type Distribution ── */}
       {run?.finished && Object.keys(run.finalTypeDist).length > 0 && (
-        <div className="px-4 py-2 border-b border-zinc-800/50">
+        <div className="border-b border-zinc-800/50 px-4 py-2">
           <TypeDistBar dist={run.finalTypeDist} />
         </div>
       )}
@@ -418,10 +488,10 @@ export const PipelineMonitor: React.FC<{
       {/* ── Live Log ── */}
       <div
         ref={logRef}
-        className="flex-1 min-h-[100px] max-h-[180px] overflow-y-auto px-3 py-2 font-mono text-[10px] leading-relaxed text-zinc-500 space-y-0.5"
+        className="max-h-[180px] min-h-[100px] flex-1 space-y-0.5 overflow-y-auto px-3 py-2 font-mono text-[10px] leading-relaxed text-zinc-500"
       >
         {logEntries.length === 0 ? (
-          <div className="text-center text-zinc-700 py-4">
+          <div className="py-4 text-center text-zinc-700">
             السجل فارغ — الصق نص أو افتح ملف
           </div>
         ) : (

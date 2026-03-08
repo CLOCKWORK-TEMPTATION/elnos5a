@@ -20,6 +20,7 @@ import {
   normalizeLine,
   stripLeadingBullets,
 } from "./text-utils";
+import { pipelineRecorder } from "./pipeline-recorder";
 
 /** نمط regex لمطابقة وسوم HTML */
 const HTML_TAG_RE = /<[^>]+>/g;
@@ -183,6 +184,7 @@ export const mergeBrokenCharacterName = (
   previousLine: string,
   currentLine: string
 ): string | null => {
+  pipelineRecorder.trackFile("line-repair.ts");
   const prevRaw = parseBulletLine(previousLine);
   const currRaw = parseBulletLine(currentLine);
 

@@ -17,8 +17,27 @@ const ENGINE_PATH = resolve(
   "ts_bridge.py"
 );
 
-const PING_TIMEOUT_MS = 10_000;
-const REQUEST_TIMEOUT_MS = 30_000;
+const resolveTimeoutFromEnv = (name, fallbackMs) => {
+  const rawValue = process.env[name];
+  if (!rawValue) return fallbackMs;
+
+  const parsedValue = Number.parseInt(rawValue, 10);
+  if (!Number.isFinite(parsedValue) || parsedValue <= 0) {
+    return fallbackMs;
+  }
+
+  return parsedValue;
+};
+
+const PING_TIMEOUT_MS = resolveTimeoutFromEnv("KARANK_PING_TIMEOUT_MS", 10_000);
+const REQUEST_TIMEOUT_MS = resolveTimeoutFromEnv(
+  "KARANK_REQUEST_TIMEOUT_MS",
+  30_000
+);
+const DOCX_REQUEST_TIMEOUT_MS = Math.max(
+  REQUEST_TIMEOUT_MS,
+  resolveTimeoutFromEnv("KARANK_DOCX_REQUEST_TIMEOUT_MS", 120_000)
+);
 const SHUTDOWN_TIMEOUT_MS = 5_000;
 
 /** @type {"idle" | "starting" | "ready" | "dead" | "error"} */
@@ -88,6 +107,24 @@ const checkEngineFiles = () => {
 };
 
 const nextId = () => `req-${++requestCounter}-${Date.now()}`;
+
+/**
+ * إعادة تعيين المحرك بعد طلب متعثر حتى لا تبقى الطلبات اللاحقة عالقة خلفه.
+ * @param {string} requestId
+ * @param {number} timeoutMs
+ */
+const restartAfterTimeout = (requestId, timeoutMs) => {
+  if (!proc || proc.killed) {
+    state = "dead";
+    return;
+  }
+
+  console.warn(
+    `[karank-bridge] انتهت مهلة ${requestId} بعد ${timeoutMs}ms، إعادة تشغيل المحرك.`
+  );
+  state = "dead";
+  proc.kill();
+};
 
 /**
  * معالجة سطر JSON قادم من stdout
@@ -165,7 +202,9 @@ const sendRequest = (payload, timeoutMs = REQUEST_TIMEOUT_MS) => {
     const id = payload.id;
     const timer = setTimeout(() => {
       pending.delete(id);
-      reject(new Error(`انتهت مهلة الطلب ${id} (${timeoutMs}ms)`));
+      const timeoutError = new Error(`انتهت مهلة الطلب ${id} (${timeoutMs}ms)`);
+      restartAfterTimeout(id, timeoutMs);
+      reject(timeoutError);
     }, timeoutMs);
 
     pending.set(id, { resolve, reject, timer });
@@ -272,16 +311,23 @@ export const parseText = async (text) => {
 /**
  * تحليل ملف DOCX عبر المحرك
  * @param {string} docxPath - المسار المطلق لملف DOCX
+ * @param {number} [timeoutMs] - مهلة اختيارية لهذا الطلب فقط
  * @returns {Promise<object>} نتيجة التحليل
  */
-export const parseDocx = async (docxPath) => {
+export const parseDocx = async (
+  docxPath,
+  timeoutMs = DOCX_REQUEST_TIMEOUT_MS
+) => {
   await ensureReady();
   const id = nextId();
-  const response = await sendRequest({
-    id,
-    action: "parseDocx",
-    path: docxPath,
-  });
+  const response = await sendRequest(
+    {
+      id,
+      action: "parseDocx",
+      path: docxPath,
+    },
+    timeoutMs
+  );
 
   if (!response?.ok) {
     const errMsg = response?.error?.message || "فشل تحليل DOCX";

@@ -7,11 +7,9 @@ from .constants import (
     ARABIC_WORD_PATTERN,
     BASMALA_PATTERN,
     CHARACTER_MAX_WORDS,
-    CHARACTER_PATTERN,
     DIALOGUE_ACTION_STARTERS,
     DIALOGUE_MARKERS,
     LOCATION_HINTS,
-    LOCATION_TYPE_WORDS,
     NARRATIVE_VERB_HINTS,
     INLINE_SPACE_PLUS,
     PARENTHETICAL_PATTERN,
@@ -19,7 +17,6 @@ from .constants import (
     SCENE_NUM_PATTERN,
     SCENE_NUMBER_TAIL_PATTERN,
     TIME_LOCATION_PATTERN,
-    TIME_WORDS,
     TRANSITION_WORDS,
 )
 
@@ -37,6 +34,7 @@ _ACTION_LINE_START_RE = re.compile(
     r"(?:%s)" % "|".join(sorted(ACTION_LINE_STARTERS, key=len, reverse=True))
 )
 _DIALOGUE_CONNECTORS = {"ثم", "بينما", "وهو", "وهي"}
+_DIALOGUE_CONTINUATION_TAILS = {"من", "في", "على", "عن", "مع", "الى", "إلى", "ولا", "او", "أو"}
 
 
 def word_count(text: str) -> int:
@@ -372,6 +370,30 @@ def merge_action_fragments(head: str, tail: str) -> str:
     if last_token in {"ي", "ت", "يت", "ل", "و", "ف", "ب", "ك", "فت", "وت"}:
         return f"{left}{right}"
     return f"{left} {right}"
+
+
+def looks_like_dialogue_continuation(previous_text: str, current_text: str) -> bool:
+    previous = previous_text.strip()
+    current = current_text.strip()
+    if not previous or not current:
+        return False
+    if looks_like_parenthetical_line(current):
+        return False
+    if looks_like_scene_location(current):
+        return False
+    if is_transition_text(current):
+        return False
+    if has_narrative_verb_hint(current) or _starts_like_action_line(current):
+        return False
+    if word_count(current) < 3:
+        return False
+
+    previous_words = _WORD_RE.findall(previous)
+    current_words = _WORD_RE.findall(current)
+    if not previous_words or not current_words:
+        return False
+
+    return previous_words[-1] in _DIALOGUE_CONTINUATION_TAILS
 
 
 def _starts_like_action_line(text: str) -> bool:

@@ -3,7 +3,7 @@
  * @description
  * آلية تحديث المحرر تدريجياً بعد العرض الفوري.
  *
- * تستقبل stream من تصحيحات AI (Gemini / Kimi / Claude)
+ * تستقبل stream من تصحيحات AI (Gemini / Claude)
  * وتطبّقها على ProseMirror editor في real-time.
  *
  * كل تصحيح = transaction واحد (تغيير نوع node).
@@ -11,7 +11,7 @@
  *
  * يُصدّر:
  * - {@link AICorrectionCommand} — أمر تصحيح واحد من أي طبقة AI
- * - {@link AILayerSource} — مصدر الطبقة (gemini-context / gemini-doubt / claude-review)
+ * - {@link AILayerSource} — مصدر الطبقة (gemini-context / claude-review)
  * - {@link ProgressiveUpdater} — الفئة الرئيسية لتطبيق التصحيحات
  * - {@link ProgressiveUpdateSession} — جلسة تحديث واحدة مرتبطة بعملية لصق/فتح
  */
@@ -26,7 +26,7 @@ import { logger } from "../utils/logger";
 // ─── الأنواع ──────────────────────────────────────────────────────
 
 /** مصدر طبقة AI */
-export type AILayerSource = "gemini-context" | "gemini-doubt" | "claude-review";
+export type AILayerSource = "gemini-context" | "claude-review";
 
 /** أمر تصحيح واحد من أي طبقة AI */
 export interface AICorrectionCommand {
@@ -82,7 +82,6 @@ const DEFAULT_MIN_CONFIDENCE = 0.6;
 
 const DEFAULT_LAYER_PRIORITY: readonly AILayerSource[] = [
   "claude-review",
-  "gemini-doubt",
   "gemini-context",
 ];
 
@@ -128,7 +127,7 @@ const elementTypeToPmNodeName = (type: ElementType): string | null => {
  *
  * تتتبع:
  * - التصحيحات المُطبّقة لكل lineIndex
- * - أولوية الطبقات (Claude > Kimi > Gemini)
+ * - أولوية الطبقات (Claude > Gemini)
  * - إحصائيات التحديث
  */
 export class ProgressiveUpdateSession {

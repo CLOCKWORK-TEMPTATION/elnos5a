@@ -36,6 +36,7 @@ import type { LineContextInfo } from "./document-context-graph";
 import { isCompleteSceneHeaderLine } from "./scene-header-top-line";
 import { isTransitionLine } from "./transition";
 import { normalizeCharacterName } from "./text-utils";
+import { pipelineRecorder } from "./pipeline-recorder";
 
 /**
  * نتيجة التصنيف الهجين — نوع العنصر مع درجة الثقة وطريقة التصنيف.
@@ -69,6 +70,7 @@ export class HybridClassifier {
     memory: ContextMemorySnapshot,
     lineCtx?: LineContextInfo
   ): HybridResult {
+    pipelineRecorder.trackFile("hybrid-classifier.ts");
     // ── أولوية 1: أنماط regex حاسمة ──
     if (isStandaloneBasmalaLine(line)) {
       return { type: "basmala", confidence: 99, classificationMethod: "regex" };
