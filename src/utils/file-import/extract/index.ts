@@ -16,10 +16,21 @@ export interface ExtractImportedFileOptions {
   backend?: BackendExtractOptions;
 }
 
+const SUPPORTED_IMPORT_TYPES_LABEL = [
+  "PDF (.pdf)",
+  "DOC (.doc)",
+  "DOCX (.docx)",
+  "TXT (.txt)",
+  "Fountain (.fountain)",
+  "FDX (.fdx)",
+].join("، ");
+
 const resolveImportedFileType = (file: File): ImportedFileType => {
   const detectedType = getFileType(file.name);
   if (!detectedType) {
-    throw new Error("نوع الملف غير مدعوم في مسار الاستيراد.");
+    throw new Error(
+      `نوع الملف غير مدعوم في مسار الاستيراد. الأنواع المدعومة حاليًا: ${SUPPORTED_IMPORT_TYPES_LABEL}.`
+    );
   }
   return detectedType;
 };

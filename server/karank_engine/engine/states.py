@@ -9,7 +9,8 @@ class State(str, Enum):
     BASMALA = "BASMALA"
     SCENE_HEADER_1 = "SCENE_HEADER_1"      # مشهد + الرقم
     SCENE_HEADER_2 = "SCENE_HEADER_2"      # الوقت + النوع (داخلي/خارجي)
-    scene_header_3 = "scene_header_3"      # موقع التصوير
+    SCENE_HEADER_3 = "scene_header_3"      # موقع التصوير
+    scene_header_3 = SCENE_HEADER_3         # توافق خلفي مع المراجع القديمة
     ACTION = "ACTION"
     CHARACTER = "CHARACTER"
     PARENTHETICAL = "PARENTHETICAL"

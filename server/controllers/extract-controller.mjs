@@ -23,6 +23,7 @@ import {
   runAntiwordPreflight,
 } from "../services/doc-extractor.mjs";
 import {
+  convertDocxBufferToTextWithMammoth,
   convertDocxBufferToDocThenExtract,
   DOCX_TO_DOC_SCRIPT_EXISTS,
   DOCX_TO_DOC_SCRIPT_PATH,
@@ -30,8 +31,54 @@ import {
 import * as karankBridge from "../karank-bridge.mjs";
 
 const ANTIWORD_PREFLIGHT = runAntiwordPreflight();
+const DOCX_ENGINE_FAST_TIMEOUT_MS = (() => {
+  const rawValue = process.env.DOCX_ENGINE_FAST_TIMEOUT_MS?.trim();
+  const parsedValue = rawValue ? Number.parseInt(rawValue, 10) : NaN;
+  return Number.isFinite(parsedValue) && parsedValue > 0 ? parsedValue : 12_000;
+})();
 
 export { ANTIWORD_PREFLIGHT };
+
+const runLegacyDocxFallback = async (buffer, filename) => {
+  if (!DOCX_TO_DOC_SCRIPT_EXISTS) {
+    throw new ExecFileClassifiedError(
+      "تعذر استخراج DOCX: ملف المحول غير موجود (docx-to-doc.final.ts).",
+      {
+        statusCode: 422,
+        category: "invalid-config",
+        classifiedError: {
+          category: "invalid-config",
+          converterScript: DOCX_TO_DOC_SCRIPT_PATH,
+        },
+      }
+    );
+  }
+  if (!ANTIWORD_PREFLIGHT.binaryAvailable) {
+    throw new ExecFileClassifiedError("تعذر استخراج DOCX: antiword غير متاح.", {
+      statusCode: 422,
+      category: "binary-missing",
+      classifiedError: {
+        category: "binary-missing",
+        antiwordPath: ANTIWORD_PREFLIGHT.antiwordPath,
+      },
+    });
+  }
+  if (!ANTIWORD_PREFLIGHT.antiwordHomeExists) {
+    throw new ExecFileClassifiedError(
+      `تعذر استخراج DOCX: مسار ANTIWORDHOME غير صالح (${ANTIWORD_PREFLIGHT.antiwordHome}).`,
+      {
+        statusCode: 422,
+        category: "invalid-config",
+        classifiedError: {
+          category: "invalid-config",
+          antiwordHome: ANTIWORD_PREFLIGHT.antiwordHome,
+        },
+      }
+    );
+  }
+
+  return convertDocxBufferToDocThenExtract(buffer, filename);
+};
 
 /**
  * تمرير النص المُستخرج عبر محرك karank للتصنيف
@@ -130,7 +177,10 @@ const extractByType = async (buffer, extension, filename) => {
     );
     try {
       await writeFile(tempPath, buffer);
-      const engineResult = await karankBridge.parseDocx(tempPath);
+      const engineResult = await karankBridge.parseDocx(
+        tempPath,
+        DOCX_ENGINE_FAST_TIMEOUT_MS
+      );
       const schemaText =
         engineResult.schemaText || engineResult.schema_text || "";
       const rawText = engineResult.input?.text_length
@@ -150,50 +200,30 @@ const extractByType = async (buffer, extension, filename) => {
       };
     } catch (engineError) {
       console.warn(
-        "[extract-controller] فشل المحرك مع DOCX، محاولة الطريقة التقليدية:",
+        "[extract-controller] فشل المحرك مع DOCX، محاولة الاستخراج المباشر:",
         engineError.message
       );
-      // fallback للطريقة التقليدية
-      if (!DOCX_TO_DOC_SCRIPT_EXISTS) {
-        throw new ExecFileClassifiedError(
-          "تعذر استخراج DOCX: ملف المحول غير موجود (docx-to-doc.final.ts).",
-          {
-            statusCode: 422,
-            category: "invalid-config",
-            classifiedError: {
-              category: "invalid-config",
-              converterScript: DOCX_TO_DOC_SCRIPT_PATH,
-            },
-          }
+
+      try {
+        const mammothResult = await convertDocxBufferToTextWithMammoth(
+          buffer,
+          filename
+        );
+
+        return {
+          ...mammothResult,
+          attempts: ["karank-engine-bridge", ...mammothResult.attempts],
+        };
+      } catch (mammothError) {
+        console.warn(
+          "[extract-controller] فشل الاستخراج المباشر لـ DOCX، محاولة الطريقة التقليدية:",
+          mammothError instanceof Error
+            ? mammothError.message
+            : String(mammothError)
         );
       }
-      if (!ANTIWORD_PREFLIGHT.binaryAvailable) {
-        throw new ExecFileClassifiedError(
-          "تعذر استخراج DOCX: antiword غير متاح.",
-          {
-            statusCode: 422,
-            category: "binary-missing",
-            classifiedError: {
-              category: "binary-missing",
-              antiwordPath: ANTIWORD_PREFLIGHT.antiwordPath,
-            },
-          }
-        );
-      }
-      if (!ANTIWORD_PREFLIGHT.antiwordHomeExists) {
-        throw new ExecFileClassifiedError(
-          `تعذر استخراج DOCX: مسار ANTIWORDHOME غير صالح (${ANTIWORD_PREFLIGHT.antiwordHome}).`,
-          {
-            statusCode: 422,
-            category: "invalid-config",
-            classifiedError: {
-              category: "invalid-config",
-              antiwordHome: ANTIWORD_PREFLIGHT.antiwordHome,
-            },
-          }
-        );
-      }
-      return convertDocxBufferToDocThenExtract(buffer, filename);
+
+      return runLegacyDocxFallback(buffer, filename);
     } finally {
       await unlink(tempPath).catch(() => {});
     }

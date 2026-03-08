@@ -11,15 +11,12 @@ import {
 } from "../controllers/extract-controller.mjs";
 import { handleTextExtract } from "../controllers/text-extract-controller.mjs";
 import { handleAgentReview } from "../controllers/agent-review-controller.mjs";
+import { handleFinalReview } from "../controllers/final-review-controller.mjs";
 import { handleExportPdfA } from "../controllers/export-controller.mjs";
 import {
   handleContextEnhance,
   getGeminiContextHealth,
 } from "../ai-context-gemini.mjs";
-import {
-  handleDoubtResolve,
-  getGeminiDoubtHealth,
-} from "../ai-doubt-gemini.mjs";
 import { getPdfOcrAgentHealth } from "../pdf-ocr-agent-config.mjs";
 import {
   getAnthropicReviewModel,
@@ -97,7 +94,6 @@ export const registerRoutes = (app) => {
       docxConverterScriptExists: DOCX_TO_DOC_SCRIPT_EXISTS,
       agentReviewConfigured: Boolean(process.env.ANTHROPIC_API_KEY),
       aiContextLayer: getGeminiContextHealth(),
-      aiDoubtLayer: getGeminiDoubtHealth(),
       ocrConfigured: ocrAgent.configured,
       ocrAgent,
       reviewModel: getAnthropicReviewModel(),
@@ -115,8 +111,8 @@ export const registerRoutes = (app) => {
   app.post("/api/files/extract", extractLimiter, handleExtract);
   app.post("/api/text-extract", extractLimiter, handleTextExtract);
   app.post("/api/agent/review", reviewLimiter, handleAgentReview);
+  app.post("/api/final-review", reviewLimiter, handleFinalReview);
   app.post("/api/ai/context-enhance", aiLimiter, handleContextEnhance);
-  app.post("/api/ai/doubt-resolve", aiLimiter, handleDoubtResolve);
   app.post("/api/export/pdfa", handleExportPdfA);
 
   app.use((req, res) => {

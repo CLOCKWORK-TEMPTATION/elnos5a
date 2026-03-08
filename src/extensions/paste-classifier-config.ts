@@ -143,3 +143,37 @@ export const VALID_AGENT_DECISION_TYPES = new Set<LineType>([
   "scene_header_1",
   "scene_header_2",
 ]);
+
+// ─── Final Review Constants ──────────────────────────────────────
+export const FINAL_REVIEW_ENDPOINT = resolveFinalReviewEndpoint();
+
+/** عتبة ترقية agent-candidate → agent-forced عند alternative-pull */
+export const FINAL_REVIEW_PROMOTION_THRESHOLD = 96;
+
+function resolveFinalReviewEndpoint(): string {
+  const explicit = (
+    process.env.NEXT_PUBLIC_AGENT_REVIEW_BACKEND_URL as string | undefined
+  )?.trim();
+  if (explicit) {
+    const normalized = explicit.replace(/\/$/, "");
+    return `${normalized}/api/final-review`;
+  }
+
+  const fileImportEndpoint =
+    (
+      process.env.NEXT_PUBLIC_FILE_IMPORT_BACKEND_URL as string | undefined
+    )?.trim() ||
+    (process.env.NODE_ENV === "development"
+      ? "http://127.0.0.1:8787/api/file-extract"
+      : "");
+  if (!fileImportEndpoint) return "";
+
+  const normalized = fileImportEndpoint.replace(/\/$/, "");
+  if (normalized.endsWith("/api/file-extract")) {
+    return `${normalized.slice(0, -"/api/file-extract".length)}/api/final-review`;
+  }
+
+  return `${normalized}/api/final-review`;
+}
+
+export { DEFAULT_FINAL_REVIEW_SCHEMA_HINTS } from "../types/final-review";

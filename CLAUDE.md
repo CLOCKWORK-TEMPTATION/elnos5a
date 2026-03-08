@@ -73,7 +73,6 @@ Routing bands: `pass` → `local-review` → `agent-candidate` → `agent-forced
 | `POST /api/file-extract`       | Extract text from PDF/DOC/DOCX/TXT/Fountain/FDX | Mistral (OCR)    |
 | `POST /api/agent/review`       | Classify suspicious lines                       | Anthropic Claude |
 | `POST /api/ai/context-enhance` | Context-aware correction (SSE)                  | Google Gemini    |
-| `POST /api/ai/doubt-resolve`   | Resolve ambiguous classifications (SSE)         | Kimi/Moonshot    |
 | `POST /api/export/pdfa`        | HTML → PDF via Puppeteer                        | —                |
 
 ### Key Source Directories
@@ -123,7 +122,6 @@ Copy `.env.example` to `.env`. Required API keys:
 
 - `ANTHROPIC_API_KEY` — Claude agent review
 - `MISTRAL_API_KEY` — PDF OCR
-- `MOONSHOT_API_KEY` — Kimi doubt resolution
 - `GEMINI_API_KEY` — Context enhancement
 - `ANTIWORD_PATH` / `ANTIWORDHOME` — DOC extraction (Windows: `C:/antiword/antiword.exe`)
 

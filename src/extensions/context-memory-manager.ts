@@ -18,6 +18,7 @@ import {
 import { normalizeCharacterName, isActionVerbStart } from "./text-utils";
 import { loadFromStorage, saveToStorage } from "../hooks/use-local-storage";
 import { logger } from "../utils/logger";
+import { pipelineRecorder } from "./pipeline-recorder";
 
 export interface DialogueBlock {
   character: string;
@@ -340,6 +341,7 @@ export class ContextMemoryManager {
   }
 
   record(entry: ClassifiedDraft): void {
+    pipelineRecorder.trackFile("context-memory-manager.ts");
     this.runtimeRecords.push(entry);
     if (this.runtimeRecords.length > MAX_RUNTIME_RECORDS) {
       this.runtimeRecords = this.runtimeRecords.slice(-MAX_RUNTIME_RECORDS);

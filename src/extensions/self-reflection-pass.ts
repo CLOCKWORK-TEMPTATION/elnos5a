@@ -30,6 +30,7 @@ import {
   startsWithBullet,
 } from "./text-utils";
 import { logger } from "../utils/logger";
+import { pipelineRecorder } from "./pipeline-recorder";
 
 const reflectionLogger = logger.createScope("self-reflection");
 
@@ -171,6 +172,7 @@ export const reflectOnChunk = (
   memoryManager: ContextMemoryManager,
   _dcg?: DocumentContextGraph
 ): number => {
+  pipelineRecorder.trackFile("self-reflection-pass.ts");
   if (chunkEnd - chunkStart < MIN_CHUNK_FOR_REFLECTION) return 0;
 
   let corrections = 0;

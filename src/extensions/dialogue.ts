@@ -27,6 +27,7 @@ import {
 } from "./arabic-patterns";
 import { collectActionEvidence } from "./action";
 import { hasDirectDialogueMarkers, normalizeLine } from "./text-utils";
+import { pipelineRecorder } from "./pipeline-recorder";
 
 /**
  * يفحص وجود دلائل حوار مباشر في النص:
@@ -161,6 +162,7 @@ export const isDialogueLine = (
   context?: Partial<ClassificationContext>,
   memorySnapshot?: ContextMemorySnapshot
 ): boolean => {
+  pipelineRecorder.trackFile("dialogue.ts");
   const normalized = normalizeLine(text);
   if (!normalized) return false;
 

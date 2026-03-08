@@ -130,7 +130,6 @@ cp .env.example .env
 ANTHROPIC_API_KEY=sk-ant-...
 MISTRAL_API_KEY=...
 GEMINI_API_KEY=...
-MOONSHOT_API_KEY=...
 
 # Backend URLs (Development)
 NEXT_PUBLIC_FILE_IMPORT_BACKEND_URL=http://127.0.0.1:8787/api/file-extract
@@ -415,9 +414,6 @@ MISTRAL_API_KEY=...
 
 # Context Enhancement: Gemini
 GEMINI_API_KEY=...
-
-# Doubt Resolution: Kimi
-MOONSHOT_API_KEY=...
 ```
 
 في `src/extensions/paste-classifier.ts`:
@@ -426,7 +422,6 @@ MOONSHOT_API_KEY=...
 export const PIPELINE_FLAGS = {
   CLAUDE_REVIEW_ENABLED: true, // تفعيل Claude
   GEMINI_CONTEXT_ENABLED: true, // تفعيل Gemini Context
-  GEMINI_DOUBT_ENABLED: true, // تفعيل Gemini Doubt
 };
 ```
 
@@ -529,7 +524,6 @@ export const PAGE_HEIGHT_PX = 1123; // A4 height @ 96 PPI
 | `/api/file-extract`       | POST   | استخراج نص من ملفات   |
 | `/api/agent/review`       | POST   | مراجعة Claude         |
 | `/api/ai/context-enhance` | POST   | تحسين السياق (Gemini) |
-| `/api/ai/doubt-resolve`   | POST   | حل الشكوك (Kimi)      |
 | `/api/export/pdfa`        | POST   | تصدير PDF/A           |
 
 **مثال**:
@@ -707,7 +701,6 @@ git push origin feature/amazing-feature
 ### قريباً (v1.1)
 
 - [ ] Gemini Context Layer (تحسين السياق)
-- [ ] Gemini Doubt Layer (حل الشكوك)
 - [ ] Progressive AI Updates (تحديثات حية)
 - [ ] Offline mode (WASM classification)
 

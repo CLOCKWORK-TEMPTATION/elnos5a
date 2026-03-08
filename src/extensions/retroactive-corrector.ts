@@ -33,6 +33,7 @@ import {
 } from "./text-utils";
 import { PRONOUN_ACTION_RE } from "./arabic-patterns";
 import { logger } from "../utils/logger";
+import { pipelineRecorder } from "./pipeline-recorder";
 
 const correctorLogger = logger.createScope("retroactive-corrector");
 
@@ -536,6 +537,7 @@ export const retroactiveCorrectionPass = (
   memoryManager?: ContextMemoryManager,
   enableNewPatterns = false
 ): number => {
+  pipelineRecorder.trackFile("retroactive-corrector.ts");
   if (classified.length < 2) return 0;
 
   const before = classified.map((d) => d.type).join(",");

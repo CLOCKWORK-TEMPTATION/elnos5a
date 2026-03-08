@@ -1,5 +1,5 @@
 /**
- * @description خدمة استخراج النصوص من ملفات DOCX عبر تحويلها إلى DOC ثم antiword
+ * @description خدمة استخراج النصوص من ملفات DOCX عبر Mammoth مباشرةً ثم fallback إلى DOC/antiword عند الحاجة
  */
 
 import process from "node:process";
@@ -9,11 +9,15 @@ import { mkdtemp, readFile, writeFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, extname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import mammoth from "mammoth";
 import {
   ExecFileClassifiedError,
   classifyExecError,
 } from "../exec-file-error-classifier.mjs";
-import { normalizeIncomingText } from "./text-normalizer.mjs";
+import {
+  cleanExtractedDocText,
+  normalizeIncomingText,
+} from "./text-normalizer.mjs";
 import { convertDocBufferToText } from "./doc-extractor.mjs";
 
 const DOCX_TO_DOC_CONVERTER_TIMEOUT_MS = 90_000;
@@ -32,6 +36,16 @@ const decodeUtf8Buffer = (value) => {
   if (typeof value === "string") return value;
   return new TextDecoder("utf-8").decode(value);
 };
+
+const normalizeMammothWarnings = (messages) =>
+  Array.isArray(messages)
+    ? messages
+        .map((entry) => {
+          if (!entry || typeof entry !== "object") return "";
+          return normalizeIncomingText(entry.message, 400);
+        })
+        .filter(Boolean)
+    : [];
 
 const resolveDocxTempFilename = (filename) => {
   const base = basename(filename || "document.docx");
@@ -82,6 +96,30 @@ const runDocxToDocConverter = async (inputDocxPath, outputDocPath) =>
       }
     );
   });
+
+export const convertDocxBufferToTextWithMammoth = async (buffer, filename) => {
+  const normalizedBuffer = Buffer.isBuffer(buffer)
+    ? buffer
+    : Buffer.from(buffer ?? "");
+
+  const result = await mammoth.extractRawText({ buffer: normalizedBuffer });
+  const text = cleanExtractedDocText(result.value ?? "");
+
+  if (!text) {
+    throw new Error(
+      `تعذر استخراج نص DOCX مباشرةً من الملف: ${filename || "document.docx"}`
+    );
+  }
+
+  return {
+    text,
+    method: "mammoth",
+    usedOcr: false,
+    attempts: ["mammoth-direct"],
+    warnings: normalizeMammothWarnings(result.messages),
+    normalizationApplied: ["docx-mammoth-extract"],
+  };
+};
 
 export const convertDocxBufferToDocThenExtract = async (buffer, filename) => {
   const warnings = [];

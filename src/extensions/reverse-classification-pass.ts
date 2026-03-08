@@ -30,6 +30,7 @@ import {
   isActionCueLine,
 } from "./text-utils";
 import { logger } from "../utils/logger";
+import { pipelineRecorder } from "./pipeline-recorder";
 
 const reverseLogger = logger.createScope("reverse-pass");
 
@@ -122,10 +123,7 @@ const classifyWithReverseContext = (
       wordCount(normalized) <= 15
     ) {
       // سطر قصير بدون action indicators → حوار أرجح
-      if (
-        hasDirectDialogueCues(normalized) ||
-        wordCount(normalized) <= 8
-      ) {
+      if (hasDirectDialogueCues(normalized) || wordCount(normalized) <= 8) {
         return { type: "dialogue", confidence: 82 };
       }
     }
@@ -146,10 +144,7 @@ const classifyWithReverseContext = (
   const futureDialogueCount = futureTypes
     .slice(0, 3)
     .filter((t) => t === "dialogue").length;
-  if (
-    futureDialogueCount >= 2 &&
-    hasDirectDialogueCues(normalized)
-  ) {
+  if (futureDialogueCount >= 2 && hasDirectDialogueCues(normalized)) {
     return { type: "dialogue", confidence: 83 };
   }
 
@@ -175,6 +170,7 @@ export const reverseClassificationPass = (
   classified: readonly ClassifiedDraft[],
   dcg: DocumentContextGraph
 ): ReverseClassificationResult => {
+  pipelineRecorder.trackFile("reverse-classification-pass.ts");
   const n = classified.length;
   if (n === 0) {
     return { reverseTypes: [], reverseConfidences: [] };

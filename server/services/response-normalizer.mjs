@@ -6,6 +6,7 @@ import { isObjectRecord, isNonEmptyString } from "./text-normalizer.mjs";
 
 const SUPPORTED_EXTRACTION_METHODS = new Set([
   "native-text",
+  "mammoth",
   "doc-converter-flow",
   "ocr-mistral",
   "backend-api",

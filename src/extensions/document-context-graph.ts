@@ -21,6 +21,7 @@
 import { isCompleteSceneHeaderLine } from "./scene-header-top-line";
 import { normalizeLine } from "./text-utils";
 import { logger } from "../utils/logger";
+import { pipelineRecorder } from "./pipeline-recorder";
 
 const dcgLogger = logger.createScope("document-context-graph");
 
@@ -261,6 +262,7 @@ const buildLineContexts = (
 export const buildDocumentContextGraph = (
   rawLines: readonly string[]
 ): DocumentContextGraph => {
+  pipelineRecorder.trackFile("document-context-graph.ts");
   const n = rawLines.length;
   if (n === 0) {
     return {

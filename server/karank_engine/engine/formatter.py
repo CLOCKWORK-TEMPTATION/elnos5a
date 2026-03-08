@@ -69,7 +69,7 @@ def to_fountain(elements: List[Tuple[State, str]]) -> str:
         elif state == State.SCENE_HEADER_2:
             output.append(value)
 
-        elif state == State.scene_header_3:
+        elif state == State.SCENE_HEADER_3:
             output.append(value)
 
         elif state == State.CHARACTER:
