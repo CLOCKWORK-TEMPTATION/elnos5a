@@ -19,9 +19,14 @@ import {
 } from "../ai-context-gemini.mjs";
 import { getPdfOcrAgentHealth } from "../pdf-ocr-agent-config.mjs";
 import {
-  getAnthropicReviewModel,
-  getAnthropicReviewRuntime,
+  getReviewModel,
+  getReviewRuntime,
 } from "../agent-review.mjs";
+import {
+  getFinalReviewModel,
+  getFinalReviewRuntime,
+} from "../final-review.mjs";
+import { getAllReviewRuntimeSnapshots } from "../provider-api-runtime.mjs";
 import {
   DEFAULT_ANTIWORD_PATH,
   DEFAULT_ANTIWORD_HOME,
@@ -80,7 +85,9 @@ const aiLimiter = rateLimit({
 export const registerRoutes = (app) => {
   app.get("/health", async (req, res) => {
     const ocrAgent = await getPdfOcrAgentHealth();
-    const reviewRuntime = getAnthropicReviewRuntime();
+    const reviewRuntime = getReviewRuntime();
+    const finalReviewRuntime = getFinalReviewRuntime();
+    const reviewSnapshots = getAllReviewRuntimeSnapshots();
     res.status(200).json({
       status: "ok",
       ok: true,
@@ -92,11 +99,12 @@ export const registerRoutes = (app) => {
       antiwordWarnings: FILE_IMPORT_PREFLIGHT_WARNINGS,
       docxConverterScriptPath: DOCX_TO_DOC_SCRIPT_PATH,
       docxConverterScriptExists: DOCX_TO_DOC_SCRIPT_EXISTS,
-      agentReviewConfigured: Boolean(process.env.ANTHROPIC_API_KEY),
+      agentReviewConfigured: reviewRuntime.configured,
+      finalReviewConfigured: finalReviewRuntime.configured,
       aiContextLayer: getGeminiContextHealth(),
       ocrConfigured: ocrAgent.configured,
       ocrAgent,
-      reviewModel: getAnthropicReviewModel(),
+      reviewModel: getReviewModel(),
       reviewProvider: reviewRuntime.provider,
       reviewModelRequested: reviewRuntime.requestedModel,
       reviewModelResolved: reviewRuntime.resolvedModel,
@@ -104,6 +112,19 @@ export const registerRoutes = (app) => {
       reviewModelFallbackReason: reviewRuntime.fallbackReason,
       reviewApiBaseUrl: reviewRuntime.baseUrl,
       reviewApiVersion: reviewRuntime.apiVersion,
+      reviewFallbackStatus: reviewRuntime.fallbackApplied ? "active" : "idle",
+      finalReviewModel: getFinalReviewModel(),
+      finalReviewProvider: finalReviewRuntime.provider,
+      finalReviewModelRequested: finalReviewRuntime.requestedModel,
+      finalReviewModelResolved: finalReviewRuntime.resolvedModel,
+      finalReviewFallbackApplied: finalReviewRuntime.fallbackApplied,
+      finalReviewFallbackReason: finalReviewRuntime.fallbackReason,
+      finalReviewApiBaseUrl: finalReviewRuntime.baseUrl,
+      finalReviewApiVersion: finalReviewRuntime.apiVersion,
+      finalReviewFallbackStatus: finalReviewRuntime.fallbackApplied
+        ? "active"
+        : "idle",
+      reviewRuntimeChannels: reviewSnapshots,
     });
   });
 

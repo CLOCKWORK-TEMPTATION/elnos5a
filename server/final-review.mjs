@@ -1,9 +1,19 @@
 import { config } from "dotenv";
-import axios from "axios";
 import { randomUUID } from "crypto";
-import Anthropic from "@anthropic-ai/sdk";
+import { HumanMessage, SystemMessage } from "@langchain/core/messages";
 import pino from "pino";
-import { resolveAnthropicApiRuntime } from "./provider-api-runtime.mjs";
+import {
+  invokeWithFallback,
+  resolveProviderErrorInfo,
+} from "./langchain-fallback-chain.mjs";
+import {
+  logReviewChannelStartupWarnings,
+  resolveReviewChannelConfig,
+} from "./provider-config.mjs";
+import {
+  getReviewRuntimeSnapshot,
+  updateReviewRuntimeSnapshot,
+} from "./provider-api-runtime.mjs";
 
 config();
 
@@ -12,27 +22,17 @@ config();
 // ─────────────────────────────────────────────────────────
 
 const DEFAULT_MODEL_ID = "claude-sonnet-4-6";
-const FALLBACK_MODEL_ID = "claude-haiku-4-5-20251001";
 const TEMPERATURE = 0.0;
 const DEFAULT_TIMEOUT_MS = 180_000;
 const API_VERSION = "2.0";
 const API_MODE = "auto-apply";
-const NON_ANTHROPIC_MODEL_RE =
-  /^(mistral|pixtral|kimi|moonshot|gpt|o\d|gemini|deepseek|llama|qwen)/iu;
 
 // Token budget
 const BASE_OUTPUT_TOKENS = 1200;
 const TOKENS_PER_SUSPICIOUS_LINE = 1000;
 const MAX_TOKENS_CEILING = 64000;
 
-// Retry
-const OVERLOAD_MAX_RETRIES = 3;
-const OVERLOAD_BASE_DELAY_MS = 3_000;
-const OVERLOAD_BACKOFF_MULTIPLIER = 2;
-
 // Validation
-const MIN_ANTHROPIC_API_KEY_LENGTH = 20;
-const MAX_API_KEY_LENGTH = 512;
 const MAX_PACKET_VERSION_LENGTH = 64;
 const MAX_SCHEMA_VERSION_LENGTH = 64;
 const MAX_SESSION_ID_LENGTH = 120;
@@ -59,7 +59,29 @@ const ALLOWED_LINE_TYPES = new Set([
 const ALLOWED_ROUTING_BANDS = new Set(["agent-candidate", "agent-forced"]);
 
 const logger = pino({ name: "final-review" });
-let anthropicClientSingleton = null;
+logReviewChannelStartupWarnings(logger, "final-review");
+const FINAL_REVIEW_CHANNEL = "final-review";
+
+const getFinalReviewConfig = (env = process.env) =>
+  resolveReviewChannelConfig(FINAL_REVIEW_CHANNEL, env);
+
+const resolveFinalReviewRuntime = (env = process.env) => {
+  const snapshot = getReviewRuntimeSnapshot(FINAL_REVIEW_CHANNEL, env);
+  return {
+    provider: snapshot.activeProvider ?? snapshot.resolvedProvider,
+    requestedModel: snapshot.requestedModel,
+    resolvedModel: snapshot.resolvedModel,
+    resolvedSpecifier: snapshot.resolvedSpecifier,
+    fallbackApplied: snapshot.usedFallback,
+    fallbackReason: snapshot.fallbackReason,
+    fallbackModel: snapshot.fallbackModel,
+    fallbackSpecifier: snapshot.fallbackSpecifier,
+    baseUrl: snapshot.apiBaseUrl,
+    apiVersion: snapshot.apiVersion,
+    configured: snapshot.configured,
+    warnings: [...snapshot.credentialWarnings],
+  };
+};
 
 // ─────────────────────────────────────────────────────────
 // القيم الافتراضية للمخطط
@@ -85,8 +107,6 @@ const DEFAULT_SCHEMA_HINTS = {
 // أدوات مساعدة
 // ─────────────────────────────────────────────────────────
 
-const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
-
 const isObjectRecord = (value) => typeof value === "object" && value !== null;
 
 const isNonEmptyString = (value) =>
@@ -97,26 +117,6 @@ const isIntegerNumber = (value) => Number.isInteger(value) && value >= 0;
 const normalizeIncomingText = (value, maxLength = 50_000) => {
   if (typeof value !== "string") return "";
   return value.trim().slice(0, maxLength);
-};
-
-const isOverloadError = (error) => {
-  if (!error) return false;
-  const status =
-    typeof error.status === "number"
-      ? error.status
-      : typeof error.statusCode === "number"
-        ? error.statusCode
-        : null;
-  if (status === 429 || status === 529 || status === 503) return true;
-  const msg = String(error.message || error).toLowerCase();
-  return msg.includes("overloaded") || msg.includes("rate_limit");
-};
-
-const isOverloadAxiosError = (error) => {
-  const status = error?.response?.status ?? error?.status;
-  if (status === 429 || status === 529 || status === 503) return true;
-  const msg = String(error?.message || "").toLowerCase();
-  return msg.includes("overloaded") || msg.includes("rate_limit");
 };
 
 // ─────────────────────────────────────────────────────────
@@ -145,43 +145,6 @@ export class FinalReviewValidationError extends Error {
     this.statusCode = 400;
   }
 }
-
-// ─────────────────────────────────────────────────────────
-// T017 — التحقق من مفتاح Anthropic API
-// ─────────────────────────────────────────────────────────
-
-const validateAnthropicApiKey = (key) => {
-  if (!key || typeof key !== "string") {
-    return {
-      valid: false,
-      message: "ANTHROPIC_API_KEY is not set.",
-      absent: true,
-    };
-  }
-  const trimmed = key.trim();
-  if (/\s/u.test(trimmed)) {
-    return {
-      valid: false,
-      message: "ANTHROPIC_API_KEY contains invalid whitespace.",
-    };
-  }
-  if (!trimmed.startsWith("sk-ant-")) {
-    return {
-      valid: false,
-      message: "ANTHROPIC_API_KEY must start with sk-ant-.",
-    };
-  }
-  if (
-    trimmed.length < MIN_ANTHROPIC_API_KEY_LENGTH ||
-    trimmed.length > MAX_API_KEY_LENGTH
-  ) {
-    return {
-      valid: false,
-      message: "ANTHROPIC_API_KEY has invalid length.",
-    };
-  }
-  return { valid: true, apiKey: trimmed };
-};
 
 // ─────────────────────────────────────────────────────────
 // T016 — التحقق من صحة جسم الطلب
@@ -494,32 +457,6 @@ export const validateFinalReviewRequestBody = (body) => {
 };
 
 // ─────────────────────────────────────────────────────────
-// T022 — اختيار الموديل
-// ─────────────────────────────────────────────────────────
-
-const resolveModel = () => {
-  const candidates = [
-    process.env.FINAL_REVIEW_MODEL,
-    process.env.ANTHROPIC_REVIEW_MODEL,
-    process.env.AGENT_REVIEW_MODEL,
-  ];
-  for (const raw of candidates) {
-    if (!raw || typeof raw !== "string") continue;
-    const trimmed = raw.trim();
-    if (!trimmed) continue;
-    if (NON_ANTHROPIC_MODEL_RE.test(trimmed)) {
-      logger.warn(
-        { requestedModel: trimmed },
-        "Non-Anthropic model rejected; using default"
-      );
-      continue;
-    }
-    return trimmed;
-  }
-  return DEFAULT_MODEL_ID;
-};
-
-// ─────────────────────────────────────────────────────────
 // T010 — بناء الـ System Prompt
 // ─────────────────────────────────────────────────────────
 
@@ -779,34 +716,6 @@ ${typesList}
 };
 
 // ─────────────────────────────────────────────────────────
-// SDK + REST helpers
-// ─────────────────────────────────────────────────────────
-
-const getAnthropicClient = () => {
-  if (anthropicClientSingleton) return anthropicClientSingleton;
-  const keyResult = validateAnthropicApiKey(process.env.ANTHROPIC_API_KEY);
-  if (!keyResult.valid) throw new Error(keyResult.message);
-  const runtime = resolveAnthropicApiRuntime(process.env);
-  anthropicClientSingleton = new Anthropic({
-    apiKey: keyResult.apiKey,
-    baseURL: runtime.baseUrl,
-    maxRetries: 0,
-    timeout: DEFAULT_TIMEOUT_MS,
-  });
-  return anthropicClientSingleton;
-};
-
-const extractTextFromBlocks = (content) => {
-  const chunks = [];
-  for (const block of content) {
-    if (block.type === "text" && typeof block.text === "string") {
-      chunks.push(block.text);
-    }
-  }
-  return chunks.join("");
-};
-
-// ─────────────────────────────────────────────────────────
 // T008 — تحليل استجابة المراجعة النهائية
 // ─────────────────────────────────────────────────────────
 
@@ -905,248 +814,10 @@ const resolveFinalReviewMockMode = () => {
   return null;
 };
 
-const buildMockResponse = (request, mockMode, startTime) => {
-  const requestId = randomUUID();
-  if (mockMode === "error") {
-    return {
-      apiVersion: API_VERSION,
-      mode: API_MODE,
-      importOpId: request.importOpId,
-      requestId,
-      status: "error",
-      commands: [],
-      message: "Mock error mode enabled.",
-      latencyMs: Date.now() - startTime,
-      model: DEFAULT_MODEL_ID,
-      meta: {
-        totalInputTokens: null,
-        totalOutputTokens: null,
-        retryCount: 0,
-        resolvedItemIds: [],
-        missingItemIds: [...request.requiredItemIds],
-        isMockResponse: true,
-      },
-    };
-  }
-  // success mock
-  const commands = request.requiredItemIds.map((itemId) => {
-    const line = request.suspiciousLines.find((l) => l.itemId === itemId);
-    return {
-      op: "relabel",
-      itemId,
-      newType: line?.assignedType ?? "action",
-      confidence: 0.99,
-      reason: "Mock: confirmed by mock mode.",
-    };
-  });
-  return {
-    apiVersion: API_VERSION,
-    mode: API_MODE,
-    importOpId: request.importOpId,
-    requestId,
-    status: "applied",
-    commands,
-    message: `Mock success: ${commands.length} commands generated.`,
-    latencyMs: Date.now() - startTime,
-    model: DEFAULT_MODEL_ID,
-    meta: {
-      totalInputTokens: null,
-      totalOutputTokens: null,
-      retryCount: 0,
-      resolvedItemIds: [...request.requiredItemIds],
-      missingItemIds: [],
-      isMockResponse: true,
-    },
-  };
-};
 
-// ─────────────────────────────────────────────────────────
-// T018+T019+T020+T021 — استدعاء Anthropic API
-// ─────────────────────────────────────────────────────────
 
-const callAnthropicApi = async (systemPrompt, userMessage, request) => {
-  const model = resolveModel();
-  const lineCount = request.suspiciousLines.length;
-  let maxTokens = Math.min(
-    BASE_OUTPUT_TOKENS + TOKENS_PER_SUSPICIOUS_LINE * lineCount,
-    MAX_TOKENS_CEILING
-  );
 
-  const params = {
-    model,
-    max_tokens: maxTokens,
-    temperature: TEMPERATURE,
-    system: systemPrompt,
-    messages: [{ role: "user", content: userMessage }],
-  };
-
-  // المحاولة مع الموديل الأساسي + retry
-  let lastError = null;
-  let retryCount = 0;
-
-  for (let attempt = 0; attempt <= OVERLOAD_MAX_RETRIES; attempt++) {
-    try {
-      // محاولة SDK أولاً
-      const client = getAnthropicClient();
-      const message = await client.messages.create(params);
-      const responseText = extractTextFromBlocks(message.content);
-
-      // كشف اقتطاع الاستجابة بسبب max_tokens (T021)
-      if (message.stop_reason === "max_tokens") {
-        const parsed = parseFinalReviewResponse(responseText);
-        if (parsed.length === 0 && maxTokens < MAX_TOKENS_CEILING) {
-          logger.warn(
-            { model, maxTokens },
-            "Response cut off at max_tokens with no parseable commands; doubling budget"
-          );
-          maxTokens = Math.min(maxTokens * 2, MAX_TOKENS_CEILING);
-          params.max_tokens = maxTokens;
-          retryCount++;
-          continue;
-        }
-      }
-
-      return {
-        text: responseText,
-        model: message.model ?? model,
-        inputTokens: message.usage?.input_tokens ?? null,
-        outputTokens: message.usage?.output_tokens ?? null,
-        retryCount,
-        stopReason: message.stop_reason,
-      };
-    } catch (sdkError) {
-      if (isOverloadError(sdkError) && attempt < OVERLOAD_MAX_RETRIES) {
-        const retryAfter = sdkError.headers?.["retry-after"];
-        const delay = retryAfter
-          ? parseInt(retryAfter, 10) * 1000
-          : OVERLOAD_BASE_DELAY_MS *
-            Math.pow(OVERLOAD_BACKOFF_MULTIPLIER, attempt);
-        logger.warn(
-          { model, attempt, delay, status: sdkError.status },
-          "Overload error; retrying after delay"
-        );
-        retryCount++;
-        await sleep(delay);
-        continue;
-      }
-      // فشل SDK نهائياً — جرّب REST fallback (T020)
-      lastError = sdkError;
-      break;
-    }
-  }
-
-  // REST fallback (T020)
-  logger.warn(
-    { model, error: lastError?.message },
-    "SDK failed; attempting REST fallback"
-  );
-  try {
-    const keyResult = validateAnthropicApiKey(process.env.ANTHROPIC_API_KEY);
-    if (!keyResult.valid) throw new Error(keyResult.message);
-    const runtime = resolveAnthropicApiRuntime(process.env);
-    const response = await axios.post(runtime.messagesEndpoint, params, {
-      headers: {
-        "Content-Type": "application/json",
-        "x-api-key": keyResult.apiKey,
-        "anthropic-version": runtime.apiVersion,
-      },
-      timeout: DEFAULT_TIMEOUT_MS,
-    });
-    const text = response.data?.content?.[0]?.text ?? "";
-    return {
-      text,
-      model: response.data?.model ?? model,
-      inputTokens: response.data?.usage?.input_tokens ?? null,
-      outputTokens: response.data?.usage?.output_tokens ?? null,
-      retryCount,
-      stopReason: response.data?.stop_reason,
-    };
-  } catch (restError) {
-    if (isOverloadAxiosError(restError)) {
-      logger.warn({ model }, "REST fallback also overloaded");
-    }
-    // جرّب الموديل البديل (T019) إذا لم يكن قيد الاستخدام
-    if (params.model !== FALLBACK_MODEL_ID) {
-      logger.warn(
-        { primaryModel: params.model, fallbackModel: FALLBACK_MODEL_ID },
-        "Switching to fallback model"
-      );
-      params.model = FALLBACK_MODEL_ID;
-      try {
-        const client = getAnthropicClient();
-        const message = await client.messages.create(params);
-        const responseText = extractTextFromBlocks(message.content);
-        return {
-          text: responseText,
-          model: message.model ?? FALLBACK_MODEL_ID,
-          inputTokens: message.usage?.input_tokens ?? null,
-          outputTokens: message.usage?.output_tokens ?? null,
-          retryCount: retryCount + 1,
-          stopReason: message.stop_reason,
-        };
-      } catch (fallbackError) {
-        logger.error(
-          { error: fallbackError.message },
-          "Fallback model also failed"
-        );
-        throw fallbackError;
-      }
-    }
-    throw restError;
-  }
-};
-
-// ─────────────────────────────────────────────────────────
-// T007 — الدالة الرئيسية: طلب المراجعة النهائية
-// ─────────────────────────────────────────────────────────
-
-export const requestFinalReview = async (body) => {
-  const startTime = Date.now();
-  const requestId = randomUUID();
-
-  // 1. التحقق من صحة الطلب
-  const request = validateFinalReviewRequestBody(body);
-  const importOpId = request.importOpId;
-
-  // 2. وضع المحاكاة
-  const mockMode = resolveFinalReviewMockMode();
-  if (mockMode) {
-    logger.info({ importOpId, mockMode }, "Using mock mode");
-    return buildMockResponse(request, mockMode, startTime);
-  }
-
-  // 3. التحقق من مفتاح API
-  const keyResult = validateAnthropicApiKey(process.env.ANTHROPIC_API_KEY);
-  if (!keyResult.valid) {
-    const status = keyResult.absent ? "error" : "partial";
-    logger.warn({ importOpId }, keyResult.message);
-    return {
-      apiVersion: API_VERSION,
-      mode: API_MODE,
-      importOpId,
-      requestId,
-      status,
-      commands: [],
-      message: keyResult.message,
-      latencyMs: Date.now() - startTime,
-    };
-  }
-
-  // 4. لا توجد سطور مشبوهة → تخطي
-  if (request.suspiciousLines.length === 0) {
-    return {
-      apiVersion: API_VERSION,
-      mode: API_MODE,
-      importOpId,
-      requestId,
-      status: "skipped",
-      commands: [],
-      message: "No suspicious lines to review.",
-      latencyMs: Date.now() - startTime,
-    };
-  }
-
-  // 5. بناء الـ prompt
+const buildFinalReviewMessages = (request) => {
   const systemPrompt = buildSystemPrompt(request.schemaHints);
   const userMessage = JSON.stringify({
     suspiciousLines: request.suspiciousLines.map((line) => ({
@@ -1167,91 +838,351 @@ export const requestFinalReview = async (body) => {
     forcedItemIds: request.forcedItemIds,
   });
 
-  // 6. استدعاء API
-  let apiResult;
-  try {
-    apiResult = await callAnthropicApi(systemPrompt, userMessage, request);
-  } catch (error) {
-    logger.error(
-      { importOpId, error: error.message },
-      "All API attempts failed"
-    );
+  return [new SystemMessage(systemPrompt), new HumanMessage(userMessage)];
+};
+
+const computeFinalReviewMaxTokens = (request, boostFactor = 1) =>
+  Math.min(
+    MAX_TOKENS_CEILING,
+    Math.max(
+      BASE_OUTPUT_TOKENS,
+      Math.ceil(
+        (BASE_OUTPUT_TOKENS +
+          request.suspiciousLines.length * TOKENS_PER_SUSPICIOUS_LINE) *
+          boostFactor
+      )
+    )
+  );
+
+const buildFinalReviewMeta = ({
+  coverage,
+  inputTokens = null,
+  outputTokens = null,
+  retryCount = 0,
+  isMockResponse = false,
+}) => ({
+  totalInputTokens: inputTokens,
+  totalOutputTokens: outputTokens,
+  retryCount,
+  resolvedItemIds: coverage.resolvedItemIds,
+  missingItemIds: coverage.missingItemIds,
+  isMockResponse,
+});
+
+const buildFinalReviewMockResponse = (request, mockMode, startTime, modelId) => {
+  const requestId = randomUUID();
+
+  if (mockMode === "error") {
+    const coverage = determineCoverageStatus([], request);
     return {
       apiVersion: API_VERSION,
       mode: API_MODE,
-      importOpId,
+      importOpId: request.importOpId,
       requestId,
-      status: "error",
+      status: coverage.status,
       commands: [],
-      message: `API call failed: ${error.message}`,
+      message: "FINAL_REVIEW_MOCK_MODE=error",
       latencyMs: Date.now() - startTime,
-      providerStatusCode: error.status ?? error.statusCode ?? null,
+      model: modelId,
+      meta: buildFinalReviewMeta({
+        coverage,
+        isMockResponse: true,
+      }),
     };
   }
 
-  // 7. تحليل الاستجابة وتطبيعها
-  const rawCommands = parseFinalReviewResponse(apiResult.text);
-  const commands = normalizeCommandsAgainstRequest(rawCommands, request);
-
-  // 8. فحص التغطية (T028)
+  const commands = request.requiredItemIds.map((itemId) => {
+    const line = request.suspiciousLines.find((entry) => entry.itemId === itemId);
+    return {
+      op: "relabel",
+      itemId,
+      newType: line?.assignedType ?? "action",
+      confidence: 0.99,
+      reason: "Mock: confirmed by mock mode.",
+    };
+  });
   const coverage = determineCoverageStatus(commands, request);
-
-  // 9. التسجيل (T026)
-  logger.info(
-    {
-      importOpId,
-      model: apiResult.model,
-      status: coverage.status,
-      latencyMs: Date.now() - startTime,
-      retryCount: apiResult.retryCount,
-      inputTokens: apiResult.inputTokens,
-      outputTokens: apiResult.outputTokens,
-      commandCount: commands.length,
-      requestedCount: request.requiredItemIds.length,
-      resolvedCount: coverage.resolvedItemIds.length,
-      missingCount: coverage.missingItemIds.length,
-    },
-    "Final review completed"
-  );
 
   return {
     apiVersion: API_VERSION,
     mode: API_MODE,
-    importOpId,
+    importOpId: request.importOpId,
     requestId,
     status: coverage.status,
     commands,
-    message:
-      coverage.status === "applied"
-        ? `All ${commands.length} items resolved.`
-        : coverage.status === "partial"
-          ? `${commands.length} of ${request.requiredItemIds.length} items resolved.`
-          : `${coverage.unresolvedForcedItemIds.length} forced items unresolved.`,
+    message: `Mock success: ${commands.length} commands generated.`,
     latencyMs: Date.now() - startTime,
-    model: apiResult.model,
-    meta: {
-      totalInputTokens: apiResult.inputTokens,
-      totalOutputTokens: apiResult.outputTokens,
-      retryCount: apiResult.retryCount,
-      resolvedItemIds: coverage.resolvedItemIds,
-      missingItemIds: coverage.missingItemIds,
-      isMockResponse: false,
-    },
+    model: modelId,
+    meta: buildFinalReviewMeta({
+      coverage,
+      isMockResponse: true,
+    }),
   };
 };
 
-// ─────────────────────────────────────────────────────────
-// الصادرات المساعدة
-// ─────────────────────────────────────────────────────────
+export const requestFinalReview = async (body) => {
+  const startTime = Date.now();
+  const request = validateFinalReviewRequestBody(body);
+  const requestId = randomUUID();
+  const config = getFinalReviewConfig();
+  const reviewModel = config.resolvedModel ?? DEFAULT_MODEL_ID;
+  const mockMode = resolveFinalReviewMockMode();
 
-export const getAnthropicFinalReviewModel = () => resolveModel();
+  updateReviewRuntimeSnapshot(FINAL_REVIEW_CHANNEL, {
+    activeProvider: config.resolvedProvider,
+    activeModel: reviewModel,
+    activeSpecifier: config.resolvedSpecifier,
+    usedFallback: false,
+    fallbackReason: null,
+    lastStatus: "running",
+    lastErrorClass: null,
+    lastErrorMessage: null,
+    lastProviderStatusCode: null,
+    retryCount: 0,
+    latencyMs: null,
+    lastInvocationAt: Date.now(),
+  });
 
-export const getAnthropicFinalReviewRuntime = () => {
-  const runtime = resolveAnthropicApiRuntime(process.env);
+  if (mockMode) {
+    const response = buildFinalReviewMockResponse(
+      request,
+      mockMode,
+      startTime,
+      reviewModel
+    );
+    updateReviewRuntimeSnapshot(FINAL_REVIEW_CHANNEL, {
+      lastStatus: response.status,
+      lastErrorClass: mockMode === "error" ? "mock" : null,
+      lastErrorMessage:
+        mockMode === "error" ? "FINAL_REVIEW_MOCK_MODE=error" : null,
+      retryCount: 0,
+      latencyMs: response.latencyMs,
+      lastSuccessAt: mockMode === "success" ? Date.now() : null,
+      lastFailureAt: mockMode === "error" ? Date.now() : null,
+    });
+    return response;
+  }
+
+  if (request.suspiciousLines.length === 0) {
+    const latencyMs = Date.now() - startTime;
+    updateReviewRuntimeSnapshot(FINAL_REVIEW_CHANNEL, {
+      lastStatus: "skipped",
+      retryCount: 0,
+      latencyMs,
+      lastSuccessAt: Date.now(),
+    });
+    return {
+      apiVersion: API_VERSION,
+      mode: API_MODE,
+      importOpId: request.importOpId,
+      requestId,
+      status: "skipped",
+      commands: [],
+      message: "No suspicious lines to review.",
+      latencyMs,
+      model: reviewModel,
+      meta: buildFinalReviewMeta({
+        coverage: determineCoverageStatus([], request),
+      }),
+    };
+  }
+
+  const configError =
+    (!config.primary?.valid && config.primary?.error) ||
+    (!config.primary?.credential?.valid && config.primary?.credential?.message) ||
+    null;
+
+  if (configError) {
+    const coverage = determineCoverageStatus([], request);
+    const latencyMs = Date.now() - startTime;
+    updateReviewRuntimeSnapshot(FINAL_REVIEW_CHANNEL, {
+      lastStatus: coverage.status,
+      lastErrorClass: "configuration",
+      lastErrorMessage: configError,
+      retryCount: 0,
+      latencyMs,
+      lastFailureAt: Date.now(),
+    });
+    return {
+      apiVersion: API_VERSION,
+      mode: API_MODE,
+      importOpId: request.importOpId,
+      requestId,
+      status: coverage.status,
+      commands: [],
+      message: configError,
+      latencyMs,
+      model: reviewModel,
+      meta: buildFinalReviewMeta({ coverage }),
+    };
+  }
+
+  const messages = buildFinalReviewMessages(request);
+
+  for (const boostFactor of [1, 2]) {
+    const maxTokens = computeFinalReviewMaxTokens(request, boostFactor);
+    try {
+      const invocation = await invokeWithFallback({
+        channel: FINAL_REVIEW_CHANNEL,
+        primaryTarget: config.primary,
+        fallbackTarget: config.fallback,
+        messages,
+        temperature: TEMPERATURE,
+        maxTokens,
+        timeoutMs: DEFAULT_TIMEOUT_MS,
+        logger,
+      });
+
+      const rawCommands = parseFinalReviewResponse(invocation.text);
+      const commands = normalizeCommandsAgainstRequest(rawCommands, request);
+      if (
+        invocation.stopReason === "max_tokens" &&
+        commands.length === 0 &&
+        boostFactor === 1
+      ) {
+        logger.warn(
+          {
+            channel: FINAL_REVIEW_CHANNEL,
+            provider: invocation.provider,
+            model: invocation.model,
+            maxTokens,
+          },
+          "final review response reached max tokens without parseable commands"
+        );
+        continue;
+      }
+
+      const coverage = determineCoverageStatus(commands, request);
+      const response = {
+        apiVersion: API_VERSION,
+        mode: API_MODE,
+        importOpId: request.importOpId,
+        requestId,
+        status: coverage.status,
+        commands,
+        message:
+          coverage.status === "applied"
+            ? `All ${commands.length} items resolved.`
+            : coverage.status === "partial"
+              ? `${commands.length} of ${request.requiredItemIds.length} items resolved.`
+              : `${coverage.unresolvedForcedItemIds.length} forced items unresolved.`,
+        latencyMs: Date.now() - startTime,
+        model: invocation.model,
+        meta: buildFinalReviewMeta({
+          coverage,
+          inputTokens: invocation.inputTokens,
+          outputTokens: invocation.outputTokens,
+          retryCount: invocation.retryCount,
+        }),
+      };
+
+      updateReviewRuntimeSnapshot(FINAL_REVIEW_CHANNEL, {
+        activeProvider: invocation.provider,
+        activeModel: invocation.model,
+        activeSpecifier: invocation.requestedSpecifier,
+        usedFallback: invocation.usedFallback,
+        fallbackReason: invocation.usedFallback
+          ? "temporary-primary-failure"
+          : null,
+        lastStatus: response.status,
+        lastErrorClass: null,
+        lastErrorMessage: null,
+        lastProviderStatusCode: null,
+        retryCount: invocation.retryCount,
+        latencyMs: response.latencyMs,
+        lastSuccessAt: Date.now(),
+      });
+
+      logger.info(
+        {
+          channel: FINAL_REVIEW_CHANNEL,
+          provider: invocation.provider,
+          model: invocation.model,
+          usedFallback: invocation.usedFallback,
+          retryCount: invocation.retryCount,
+          latencyMs: response.latencyMs,
+        },
+        "final review completed"
+      );
+
+      return response;
+    } catch (error) {
+      const providerInfo = resolveProviderErrorInfo(error);
+      const latencyMs = Date.now() - startTime;
+      updateReviewRuntimeSnapshot(FINAL_REVIEW_CHANNEL, {
+        activeProvider: error?.provider ?? config.resolvedProvider,
+        activeModel: error?.model ?? reviewModel,
+        activeSpecifier: error?.specifier ?? config.resolvedSpecifier,
+        usedFallback: Boolean(
+          config.fallback?.usable &&
+            error?.specifier &&
+            config.fallback.specifier === error.specifier
+        ),
+        fallbackReason:
+          config.fallback?.usable &&
+          error?.specifier &&
+          config.fallback.specifier === error.specifier
+            ? "fallback-exhausted"
+            : null,
+        lastStatus: "error",
+        lastErrorClass: providerInfo.temporary
+          ? "temporary-provider-error"
+          : "provider-error",
+        lastErrorMessage: providerInfo.message,
+        lastProviderStatusCode: providerInfo.status ?? null,
+        retryCount: typeof error?.retryCount === "number" ? error.retryCount : 0,
+        latencyMs,
+        lastFailureAt: Date.now(),
+      });
+
+      logger.error(
+        {
+          channel: FINAL_REVIEW_CHANNEL,
+          provider: error?.provider ?? config.resolvedProvider,
+          model: error?.model ?? reviewModel,
+          status: providerInfo.status,
+          temporary: providerInfo.temporary,
+        },
+        "final review failed"
+      );
+
+      return {
+        apiVersion: API_VERSION,
+        mode: API_MODE,
+        importOpId: request.importOpId,
+        requestId,
+        status: "error",
+        commands: [],
+        message: `Final review failed: ${providerInfo.message}`,
+        latencyMs,
+        providerStatusCode: providerInfo.status ?? null,
+        model: reviewModel,
+        meta: buildFinalReviewMeta({
+          coverage: determineCoverageStatus([], request),
+        }),
+      };
+    }
+  }
+
+  const latencyMs = Date.now() - startTime;
   return {
-    provider: "anthropic",
-    resolvedModel: resolveModel(),
-    baseUrl: runtime.baseUrl,
-    apiVersion: runtime.apiVersion,
+    apiVersion: API_VERSION,
+    mode: API_MODE,
+    importOpId: request.importOpId,
+    requestId,
+    status: "partial",
+    commands: [],
+    message: "Final review returned no parseable commands.",
+    latencyMs,
+    model: reviewModel,
+    meta: buildFinalReviewMeta({
+      coverage: determineCoverageStatus([], request),
+    }),
   };
 };
+
+export const getFinalReviewModel = () =>
+  resolveFinalReviewRuntime().resolvedModel || DEFAULT_MODEL_ID;
+
+export const getFinalReviewRuntime = () => resolveFinalReviewRuntime();
+

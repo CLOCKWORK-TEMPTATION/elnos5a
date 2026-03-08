@@ -68,12 +68,13 @@ Routing bands: `pass` → `local-review` → `agent-candidate` → `agent-forced
 
 ### Frontend → Backend Endpoints
 
-| Endpoint                       | Purpose                                         | AI Provider      |
-| ------------------------------ | ----------------------------------------------- | ---------------- |
-| `POST /api/file-extract`       | Extract text from PDF/DOC/DOCX/TXT/Fountain/FDX | Mistral (OCR)    |
-| `POST /api/agent/review`       | Classify suspicious lines                       | Anthropic Claude |
-| `POST /api/ai/context-enhance` | Context-aware correction (SSE)                  | Google Gemini    |
-| `POST /api/export/pdfa`        | HTML → PDF via Puppeteer                        | —                |
+| Endpoint                       | Purpose                                         | AI Provider                                              |
+| ------------------------------ | ----------------------------------------------- | -------------------------------------------------------- |
+| `POST /api/file-extract`       | Extract text from PDF/DOC/DOCX/TXT/Fountain/FDX | Mistral (OCR)                                            |
+| `POST /api/agent/review`       | Classify suspicious lines                       | Configured review provider via `AGENT_REVIEW_MODEL`      |
+| `POST /api/final-review`       | Secondary review (Command API v2)               | Configured review provider via `FINAL_REVIEW_MODEL`      |
+| `POST /api/ai/context-enhance` | Context-aware correction (SSE)                  | Google Gemini                                            |
+| `POST /api/export/pdfa`        | HTML → PDF via Puppeteer                        | —                                                        |
 
 ### Key Source Directories
 
@@ -118,11 +119,15 @@ Routing bands: `pass` → `local-review` → `agent-candidate` → `agent-forced
 
 ## Environment Setup
 
-Copy `.env.example` to `.env`. Required API keys:
+Copy `.env.example` to `.env`. Review provider selection is provider-agnostic:
 
-- `ANTHROPIC_API_KEY` — Claude agent review
+- `AGENT_REVIEW_MODEL` / `AGENT_REVIEW_FALLBACK_MODEL` — `provider:model` for suspicious-line review
+- `FINAL_REVIEW_MODEL` / `FINAL_REVIEW_FALLBACK_MODEL` — `provider:model` for final review
+- `ANTHROPIC_API_KEY` — required only when either review channel uses `anthropic:*`
+- `OPENAI_API_KEY` — required only when either review channel uses `openai:*`
+- `GEMINI_API_KEY` — required for `google-genai:*` review models and context enhancement
+- `DEEPSEEK_API_KEY` / `DEEPSEEK_BASE_URL` — required for `deepseek:*` review models
 - `MISTRAL_API_KEY` — PDF OCR
-- `GEMINI_API_KEY` — Context enhancement
 - `ANTIWORD_PATH` / `ANTIWORDHOME` — DOC extraction (Windows: `C:/antiword/antiword.exe`)
 
 Backend runs on `127.0.0.1:8787`. Frontend env vars use `NEXT_PUBLIC_` prefix.
