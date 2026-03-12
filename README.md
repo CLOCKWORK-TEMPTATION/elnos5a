@@ -1,4 +1,6 @@
 # أفان تيتر | Avan Titre
+[![FOSSA Status](https://app.fossa.com/api/projects/git%2Bgithub.com%2FCLOCKWORK-TEMPTATION%2Felnos5a.svg?type=shield)](https://app.fossa.com/projects/git%2Bgithub.com%2FCLOCKWORK-TEMPTATION%2Felnos5a?ref=badge_shield)
+
 
 **محرر سيناريو عربي احترافي للويب**
 
@@ -190,3 +192,7 @@
 **صُنع بـ ❤️ للكتّاب العرب**
 
 </div>
+
+
+## License
+[![FOSSA Status](https://app.fossa.com/api/projects/git%2Bgithub.com%2FCLOCKWORK-TEMPTATION%2Felnos5a.svg?type=large)](https://app.fossa.com/projects/git%2Bgithub.com%2FCLOCKWORK-TEMPTATION%2Felnos5a?ref=badge_large)
