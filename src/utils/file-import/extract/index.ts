@@ -11,6 +11,7 @@ import {
 
 export * from "./backend-extract";
 export * from "./browser-extract";
+export * from "./unified-text-extract";
 
 export interface ExtractImportedFileOptions {
   backend?: BackendExtractOptions;

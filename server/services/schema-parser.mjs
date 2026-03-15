@@ -83,7 +83,7 @@ export const parseSchemaText = (schemaText) => {
     });
   }
 
-  // orphan cene_header_1 handling: تحذير عند وجود scene_header_1 بدون scene_header_2 بعده
+  // orphan scene_header_1 handling: تحذير عند وجود scene_header_1 بدون scene_header_2 بعده
   for (let i = 0; i < elements.length; i++) {
     if (elements[i].mappedType === "scene_header_1") {
       const next = elements[i + 1];
@@ -130,13 +130,13 @@ export const schemaElementsToDrafts = (schemaElements) => {
     });
   }
 
-  // orphan cene_header_1 check
+  // orphan scene_header_1 check
   for (let i = 0; i < drafts.length; i++) {
     if (drafts[i].type === "scene_header_1") {
       const next = drafts[i + 1];
       if (!next || next.type !== "scene_header_2") {
         warnings.push(
-          `cene_header_1 بدون cene_header_2 تالٍ — scene_header_1 جزئي`
+          `scene_header_1 بدون scene_header_2 تالٍ — scene_header_1 جزئي`
         );
       }
     }

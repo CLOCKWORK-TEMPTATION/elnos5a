@@ -1,9 +1,8 @@
-import { Extension } from "@tiptap/core";
+﻿import { Extension } from "@tiptap/core";
 import { Fragment, Node as PmNode, Schema, Slice } from "@tiptap/pm/model";
 import { Plugin, PluginKey } from "@tiptap/pm/state";
 import type { EditorView } from "@tiptap/pm/view";
 import { isActionLine } from "./action";
-import { parseReviewCommands } from "./Arabic-Screenplay-Classifier-Agent";
 import {
   DATE_PATTERNS,
   TIME_PATTERNS,
@@ -18,16 +17,11 @@ import {
   parseInlineCharacterDialogue,
 } from "./character";
 import { resolveNarrativeDecision } from "./classification-decision";
-import { PostClassificationReviewer } from "./classification-core";
 import type {
   ClassifiedDraft,
   ClassificationContext,
-  ClassifiedLine,
   ElementType,
-  LLMReviewPacket,
-  SuspiciousLine,
 } from "./classification-types";
-import { isElementType } from "./classification-types";
 import { ContextMemoryManager } from "./context-memory-manager";
 import {
   getDialogueProbability,
@@ -70,22 +64,9 @@ import { stripLeadingBullets } from "./text-utils";
 import { progressiveUpdater } from "./ai-progressive-updater";
 import { pipelineRecorder } from "./pipeline-recorder";
 import {
-  COMMAND_API_VERSION,
-  CLASSIFICATION_MODE,
-  AGENT_REVIEW_MODEL,
-  AGENT_REVIEW_DEADLINE_MS,
-  AGENT_REVIEW_MAX_ATTEMPTS,
-  AGENT_REVIEW_MAX_RATIO,
-  AGENT_REVIEW_MIN_TIMEOUT_MS,
-  AGENT_REVIEW_MAX_TIMEOUT_MS,
-  AGENT_REVIEW_RETRY_DELAY_MS,
   agentReviewLogger,
-  AGENT_REVIEW_FAIL_OPEN,
   sanitizeOcrArtifactsForClassification,
-  AGENT_REVIEW_ENDPOINT,
   TEXT_EXTRACT_ENDPOINT,
-  REVIEWABLE_AGENT_TYPES,
-  VALID_AGENT_DECISION_TYPES,
   PASTE_CLASSIFIER_ERROR_EVENT,
 } from "./paste-classifier-config";
 export { PASTE_CLASSIFIER_ERROR_EVENT } from "./paste-classifier-config";
@@ -96,14 +77,8 @@ import {
   toSourceProfile,
   buildStructuredHintQueues,
   consumeSourceHintTypeForLine,
-  shouldSkipAgentReviewInRuntime,
-  waitBeforeRetry,
-  isRetryableHttpStatus,
-  toUniqueSortedIndexes,
-  toNormalizedMetaIds,
   type ClassifiedDraftWithId,
 } from "./paste-classifier-helpers";
-import { requestContextEnhancement } from "./ai-context-layer";
 import { traceCollector } from "@/suspicion-engine/trace/trace-collector";
 import type { PassStage } from "@/suspicion-engine/types";
 import { createDefaultSuspicionEngine } from "@/suspicion-engine/engine";
@@ -111,29 +86,6 @@ import {
   collectTracesFromMap,
   applyPreRenderActions,
 } from "@/suspicion-engine/adapters/from-classifier";
-import type {
-  AgentReviewRequestPayload,
-  AgentReviewResponsePayload,
-  AgentCommand,
-  AgentReviewResponseMeta,
-  LineType,
-} from "../types";
-import {
-  computeFingerprintSync,
-  createImportOperationState,
-  checkResponseValidity,
-  normalizeAndDedupeCommands,
-  prepareItemForPacket,
-  buildPacketWithBudget,
-  DEFAULT_PACKET_BUDGET,
-} from "../pipeline";
-import type { ItemSnapshot } from "../pipeline";
-import {
-  logAgentResponse,
-  logCommandApply,
-  logAgentError,
-  telemetry as pipelineTelemetry,
-} from "../pipeline/telemetry";
 import type { SuspicionCase } from "@/suspicion-engine/types";
 import type { ReviewRoutingStats as FinalReviewRoutingStats } from "@/types/final-review";
 import type {
@@ -143,6 +95,7 @@ import type {
 } from "@/types/final-review";
 import {
   FINAL_REVIEW_ENDPOINT,
+  FINAL_REVIEW_MAX_RATIO,
   FINAL_REVIEW_PROMOTION_THRESHOLD,
   DEFAULT_FINAL_REVIEW_SCHEMA_HINTS,
 } from "./paste-classifier-config";
@@ -151,7 +104,7 @@ import {
   formatFinalReviewPacketText,
 } from "@/final-review/payload-builder";
 
-// ── Re-entry guard + text dedup ──────────────────────────────────────────────
+// â”€â”€ Re-entry guard + text dedup â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 let pipelineRunning = false;
 let lastProcessedHash = "";
 let lastProcessedAt = 0;
@@ -182,58 +135,59 @@ const recordStageVotes = (
   }
 };
 
-let pendingAgentAbortController: AbortController | null = null;
+type ClassifiedDraftPipelineState = ClassifiedDraftWithId[] & {
+  _sequenceOptimization?: SequenceOptimizationResult;
+  _suspicionCases?: readonly SuspicionCase[];
+};
 
-// ─── Feature Flags (طبقات جديدة — للتجربة) ────────────────────
-// غيّر لـ true عشان تفعّل كل طبقة
+// â”€â”€â”€ Feature Flags (Ø·Ø¨Ù‚Ø§Øª Ø¬Ø¯ÙŠØ¯Ø© â€” Ù„Ù„ØªØ¬Ø±Ø¨Ø©) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ØºÙŠÙ‘Ø± Ù„Ù€ true Ø¹Ø´Ø§Ù† ØªÙØ¹Ù‘Ù„ ÙƒÙ„ Ø·Ø¨Ù‚Ø©
 export const PIPELINE_FLAGS = {
-  /** Document Context Graph + DCG bonus في الـ hybrid classifier */
+  /** Document Context Graph + DCG bonus ÙÙŠ Ø§Ù„Ù€ hybrid classifier */
   DCG_ENABLED: true,
-  /** Self-Reflection أثناء الـ forward pass */
+  /** Self-Reflection Ø£Ø«Ù†Ø§Ø¡ Ø§Ù„Ù€ forward pass */
   SELF_REFLECTION_ENABLED: true,
-  /** أنماط 6-9 الجديدة في الـ retroactive corrector */
+  /** Ø£Ù†Ù…Ø§Ø· 6-9 Ø§Ù„Ø¬Ø¯ÙŠØ¯Ø© ÙÙŠ Ø§Ù„Ù€ retroactive corrector */
   RETRO_NEW_PATTERNS_ENABLED: true,
-  /** Reverse Classification Pass + دمج */
+  /** Reverse Classification Pass + Ø¯Ù…Ø¬ */
   REVERSE_PASS_ENABLED: true,
-  /** Viterbi Override (تطبيق اقتراحات Viterbi القوية) */
+  /** Viterbi Override (ØªØ·Ø¨ÙŠÙ‚ Ø§Ù‚ØªØ±Ø§Ø­Ø§Øª Viterbi Ø§Ù„Ù‚ÙˆÙŠØ©) */
   VITERBI_OVERRIDE_ENABLED: true,
-  /** Gemini Flash — تعزيز السياق (AI Layer 1) */
-  GEMINI_CONTEXT_ENABLED: false,
-  /** Claude Agent Review — مراجعة نهائية (AI Layer 2) */
-  CLAUDE_REVIEW_ENABLED: false,
+  /** Final review layer after suspicion routing */
+  FINAL_REVIEW_ENABLED: true,
 };
 
 /**
- * خيارات مصنّف اللصق التلقائي.
+ * Ø®ÙŠØ§Ø±Ø§Øª Ù…ØµÙ†Ù‘Ù Ø§Ù„Ù„ØµÙ‚ Ø§Ù„ØªÙ„Ù‚Ø§Ø¦ÙŠ.
  */
 export interface PasteClassifierOptions {
-  /** دالة مراجعة محلية مخصصة (اختياري) */
+  /** Ø¯Ø§Ù„Ø© Ù…Ø±Ø§Ø¬Ø¹Ø© Ù…Ø­Ù„ÙŠØ© Ù…Ø®ØµØµØ© (Ø§Ø®ØªÙŠØ§Ø±ÙŠ) */
   agentReview?: (
     classified: readonly ClassifiedDraftWithId[]
   ) => ClassifiedDraftWithId[];
 }
 
 /**
- * خيارات تطبيق تدفق التصنيف على العرض.
+ * Ø®ÙŠØ§Ø±Ø§Øª ØªØ·Ø¨ÙŠÙ‚ ØªØ¯ÙÙ‚ Ø§Ù„ØªØµÙ†ÙŠÙ Ø¹Ù„Ù‰ Ø§Ù„Ø¹Ø±Ø¶.
  */
 export interface ApplyPasteClassifierFlowOptions {
-  /** دالة مراجعة محلية مخصصة (اختياري) */
+  /** Ø¯Ø§Ù„Ø© Ù…Ø±Ø§Ø¬Ø¹Ø© Ù…Ø­Ù„ÙŠØ© Ù…Ø®ØµØµØ© (Ø§Ø®ØªÙŠØ§Ø±ÙŠ) */
   agentReview?: (
     classified: readonly ClassifiedDraftWithId[]
   ) => ClassifiedDraftWithId[];
-  /** موضع البدء في العرض (اختياري) */
+  /** Ù…ÙˆØ¶Ø¹ Ø§Ù„Ø¨Ø¯Ø¡ ÙÙŠ Ø§Ù„Ø¹Ø±Ø¶ (Ø§Ø®ØªÙŠØ§Ø±ÙŠ) */
   from?: number;
-  /** موضع النهاية في العرض (اختياري) */
+  /** Ù…ÙˆØ¶Ø¹ Ø§Ù„Ù†Ù‡Ø§ÙŠØ© ÙÙŠ Ø§Ù„Ø¹Ø±Ø¶ (Ø§Ø®ØªÙŠØ§Ø±ÙŠ) */
   to?: number;
-  /** بروفايل مصدر التصنيف (paste | generic-open) */
+  /** Ø¨Ø±ÙˆÙØ§ÙŠÙ„ Ù…ØµØ¯Ø± Ø§Ù„ØªØµÙ†ÙŠÙ (paste | generic-open) */
   classificationProfile?: string; // ClassificationSourceProfile in classification-types
-  /** نوع الملف المصدر (اختياري) */
+  /** Ù†ÙˆØ¹ Ø§Ù„Ù…Ù„Ù Ø§Ù„Ù…ØµØ¯Ø± (Ø§Ø®ØªÙŠØ§Ø±ÙŠ) */
   sourceFileType?: string;
-  /** طريقة الاستخراج (اختياري) */
+  /** Ø·Ø±ÙŠÙ‚Ø© Ø§Ù„Ø§Ø³ØªØ®Ø±Ø§Ø¬ (Ø§Ø®ØªÙŠØ§Ø±ÙŠ) */
   sourceMethod?: string;
-  /** تلميحات بنيوية من المصدر (Filmlane، PDF، إلخ) */
+  /** ØªÙ„Ù…ÙŠØ­Ø§Øª Ø¨Ù†ÙŠÙˆÙŠØ© Ù…Ù† Ø§Ù„Ù…ØµØ¯Ø± (FilmlaneØŒ PDFØŒ Ø¥Ù„Ø®) */
   structuredHints?: readonly unknown[]; // ScreenplayBlock[]
-  /** عناصر schema من المحرك المضمّن (اختياري) */
+  /** Ø¹Ù†Ø§ØµØ± schema Ù…Ù† Ø§Ù„Ù…Ø­Ø±Ùƒ Ø§Ù„Ù…Ø¶Ù…Ù‘Ù† (Ø§Ø®ØªÙŠØ§Ø±ÙŠ) */
   schemaElements?: readonly SchemaElementInput[];
 }
 
@@ -274,7 +228,7 @@ const hasTemporalSceneSignal = (text: string): boolean =>
   DATE_PATTERNS.test(text) || TIME_PATTERNS.test(text);
 
 /**
- * جدول ربط أسماء عناصر المحرك بأنواع عناصر السيناريو
+ * Ø¬Ø¯ÙˆÙ„ Ø±Ø¨Ø· Ø£Ø³Ù…Ø§Ø¡ Ø¹Ù†Ø§ØµØ± Ø§Ù„Ù…Ø­Ø±Ùƒ Ø¨Ø£Ù†ÙˆØ§Ø¹ Ø¹Ù†Ø§ØµØ± Ø§Ù„Ø³ÙŠÙ†Ø§Ø±ÙŠÙˆ
  */
 const ENGINE_ELEMENT_MAP: ReadonlyMap<string, ElementType> = new Map([
   ["cene_header_1", "scene_header_1"],
@@ -289,8 +243,8 @@ const ENGINE_ELEMENT_MAP: ReadonlyMap<string, ElementType> = new Map([
 ]);
 
 /**
- * مسار schema-style: تحويل schemaElements مباشرة إلى ClassifiedDraftWithId[]
- * بـ classificationMethod="external-engine" دون المرور بـ HybridClassifier
+ * Ù…Ø³Ø§Ø± schema-style: ØªØ­ÙˆÙŠÙ„ schemaElements Ù…Ø¨Ø§Ø´Ø±Ø© Ø¥Ù„Ù‰ ClassifiedDraftWithId[]
+ * Ø¨Ù€ classificationMethod="external-engine" Ø¯ÙˆÙ† Ø§Ù„Ù…Ø±ÙˆØ± Ø¨Ù€ HybridClassifier
  */
 const classifyFromSchemaElements = (
   schemaElements: readonly SchemaElementInput[]
@@ -302,7 +256,7 @@ const classifyFromSchemaElements = (
       continue;
 
     const mappedType = ENGINE_ELEMENT_MAP.get(el.element.trim());
-    if (!mappedType) continue; // عنصر غير معروف — تجاهل
+    if (!mappedType) continue; // Ø¹Ù†ØµØ± ØºÙŠØ± Ù…Ø¹Ø±ÙˆÙ â€” ØªØ¬Ø§Ù‡Ù„
 
     const text = el.value.trim();
     if (!text) continue;
@@ -320,18 +274,18 @@ const classifyFromSchemaElements = (
 };
 
 /**
- * تصنيف النصوص المُلصقة محلياً مع توليد معرف فريد (_itemId) لكل عنصر.
- * المعرّف يُستخدم لاحقاً في تتبع الأوامر من الوكيل.
+ * ØªØµÙ†ÙŠÙ Ø§Ù„Ù†ØµÙˆØµ Ø§Ù„Ù…ÙÙ„ØµÙ‚Ø© Ù…Ø­Ù„ÙŠØ§Ù‹ Ù…Ø¹ ØªÙˆÙ„ÙŠØ¯ Ù…Ø¹Ø±Ù ÙØ±ÙŠØ¯ (_itemId) Ù„ÙƒÙ„ Ø¹Ù†ØµØ±.
+ * Ø§Ù„Ù…Ø¹Ø±Ù‘Ù ÙŠÙØ³ØªØ®Ø¯Ù… Ù„Ø§Ø­Ù‚Ø§Ù‹ ÙÙŠ ØªØªØ¨Ø¹ Ø§Ù„Ø£ÙˆØ§Ù…Ø± Ù…Ù† Ø§Ù„ÙˆÙƒÙŠÙ„.
  */
 export const classifyLines = (
   text: string,
   context?: ClassifyLinesContext
 ): ClassifiedDraftWithId[] => {
-  // ── مسار schema-style: إذا أتت schemaElements من المحرك ──
+  // â”€â”€ Ù…Ø³Ø§Ø± schema-style: Ø¥Ø°Ø§ Ø£ØªØª schemaElements Ù…Ù† Ø§Ù„Ù…Ø­Ø±Ùƒ â”€â”€
   if (context?.schemaElements && context.schemaElements.length > 0) {
     const schemaDrafts = classifyFromSchemaElements(context.schemaElements);
     if (schemaDrafts.length > 0) {
-      // ── تنظيف العلامات بعد التصنيف ──
+      // â”€â”€ ØªÙ†Ø¸ÙŠÙ Ø§Ù„Ø¹Ù„Ø§Ù…Ø§Øª Ø¨Ø¹Ø¯ Ø§Ù„ØªØµÙ†ÙŠÙ â”€â”€
       const cleaned = schemaDrafts
         .map((d) => ({ ...d, text: stripLeadingBullets(d.text) }))
         .filter((d) => d.text.length > 0);
@@ -345,23 +299,23 @@ export const classifyLines = (
         return cleaned;
       }
     }
-    // fallback: إذا لم ينتج schema-style أي نتائج، تابع بالمسار العادي
+    // fallback: Ø¥Ø°Ø§ Ù„Ù… ÙŠÙ†ØªØ¬ schema-style Ø£ÙŠ Ù†ØªØ§Ø¦Ø¬ØŒ ØªØ§Ø¨Ø¹ Ø¨Ø§Ù„Ù…Ø³Ø§Ø± Ø§Ù„Ø¹Ø§Ø¯ÙŠ
   }
 
-  // ── توحيد النص: إزالة الحروف غير المرئية التي يضيفها Word clipboard ──
+  // â”€â”€ ØªÙˆØ­ÙŠØ¯ Ø§Ù„Ù†Øµ: Ø¥Ø²Ø§Ù„Ø© Ø§Ù„Ø­Ø±ÙˆÙ ØºÙŠØ± Ø§Ù„Ù…Ø±Ø¦ÙŠØ© Ø§Ù„ØªÙŠ ÙŠØ¶ÙŠÙÙ‡Ø§ Word clipboard â”€â”€
   const normalizedText = normalizeRawInputText(text);
 
-  // ── diagnostic: بصمة النص المُدخل للمقارنة بين المسارات ──
+  // â”€â”€ diagnostic: Ø¨ØµÙ…Ø© Ø§Ù„Ù†Øµ Ø§Ù„Ù…ÙØ¯Ø®Ù„ Ù„Ù„Ù…Ù‚Ø§Ø±Ù†Ø© Ø¨ÙŠÙ† Ø§Ù„Ù…Ø³Ø§Ø±Ø§Øª â”€â”€
   const _diagRawLen = normalizedText.length;
   const _diagRawLines = normalizedText.split(/\r?\n/).length;
   const _diagRawHash = Array.from(normalizedText).reduce(
     (h, c) => (Math.imul(31, h) + c.charCodeAt(0)) | 0,
     0
   );
-  const _diagFirst80 = normalizedText.slice(0, 80).replace(/\n/g, "↵");
-  const _diagLast80 = normalizedText.slice(-80).replace(/\n/g, "↵");
+  const _diagFirst80 = normalizedText.slice(0, 80).replace(/\n/g, "â†µ");
+  const _diagLast80 = normalizedText.slice(-80).replace(/\n/g, "â†µ");
 
-  // ── diagnostic: تفصيل أنواع الحروف الخاصة في النص الأصلي ──
+  // â”€â”€ diagnostic: ØªÙØµÙŠÙ„ Ø£Ù†ÙˆØ§Ø¹ Ø§Ù„Ø­Ø±ÙˆÙ Ø§Ù„Ø®Ø§ØµØ© ÙÙŠ Ø§Ù„Ù†Øµ Ø§Ù„Ø£ØµÙ„ÙŠ â”€â”€
   const _diagCharBreakdown = {
     cr: (text.match(/\r/g) || []).length,
     nbsp: (text.match(/\u00A0/g) || []).length,
@@ -411,18 +365,18 @@ export const classifyLines = (
   const classified: ClassifiedDraftWithId[] = [];
 
   const memoryManager = new ContextMemoryManager();
-  // بذر الـ registry من inline patterns (regex-based) قبل الـ loop
+  // Ø¨Ø°Ø± Ø§Ù„Ù€ registry Ù…Ù† inline patterns (regex-based) Ù‚Ø¨Ù„ Ø§Ù„Ù€ loop
   memoryManager.seedFromInlinePatterns(lines);
-  // بذر الـ registry من standalone patterns (اسم: سطر + حوار سطر تالي)
+  // Ø¨Ø°Ø± Ø§Ù„Ù€ registry Ù…Ù† standalone patterns (Ø§Ø³Ù…: Ø³Ø·Ø± + Ø­ÙˆØ§Ø± Ø³Ø·Ø± ØªØ§Ù„ÙŠ)
   memoryManager.seedFromStandalonePatterns(lines);
   const hybridClassifier = new HybridClassifier();
 
-  // ── بناء Document Context Graph (مسح أولي — O(n)) ──
+  // â”€â”€ Ø¨Ù†Ø§Ø¡ Document Context Graph (Ù…Ø³Ø­ Ø£ÙˆÙ„ÙŠ â€” O(n)) â”€â”€
   const dcg: DocumentContextGraph | undefined = PIPELINE_FLAGS.DCG_ENABLED
     ? buildDocumentContextGraph(lines)
     : undefined;
 
-  // استخراج الخيارات من السياق
+  // Ø§Ø³ØªØ®Ø±Ø§Ø¬ Ø§Ù„Ø®ÙŠØ§Ø±Ø§Øª Ù…Ù† Ø§Ù„Ø³ÙŠØ§Ù‚
   const sourceProfile = toSourceProfile(context?.classificationProfile);
   const hintQueues = buildStructuredHintQueues(context?.structuredHints);
   let activeSourceHintType: ElementType | undefined;
@@ -431,7 +385,7 @@ export const classifyLines = (
     const withId: ClassifiedDraftWithId = {
       ...entry,
       _itemId: generateItemId(),
-      // إضافة بيانات المصدر إذا كانت متوفرة
+      // Ø¥Ø¶Ø§ÙØ© Ø¨ÙŠØ§Ù†Ø§Øª Ø§Ù„Ù…ØµØ¯Ø± Ø¥Ø°Ø§ ÙƒØ§Ù†Øª Ù…ØªÙˆÙØ±Ø©
       sourceProfile,
       sourceHintType: activeSourceHintType,
     };
@@ -439,14 +393,14 @@ export const classifyLines = (
     memoryManager.record(entry);
   };
 
-  // ── Recorder: بداية run جديد + snapshot أولي ──
+  // â”€â”€ Recorder: Ø¨Ø¯Ø§ÙŠØ© run Ø¬Ø¯ÙŠØ¯ + snapshot Ø£ÙˆÙ„ÙŠ â”€â”€
   traceCollector.clear();
   pipelineRecorder.startRun(context?.classificationProfile ?? "paste", {
     textLength: normalizedText.length,
     lineCount: lines.length,
   });
 
-  // ── Self-Reflection: عدّاد أسطر الـ chunk الحالي ──
+  // â”€â”€ Self-Reflection: Ø¹Ø¯Ù‘Ø§Ø¯ Ø£Ø³Ø·Ø± Ø§Ù„Ù€ chunk Ø§Ù„Ø­Ø§Ù„ÙŠ â”€â”€
   let chunkStartIdx = 0;
   let linesInChunk = 0;
 
@@ -607,7 +561,7 @@ export const classifyLines = (
       continue;
     }
 
-    // أخذ snapshot قبل parseImplicit عشان نمرر confirmedCharacters
+    // Ø£Ø®Ø° snapshot Ù‚Ø¨Ù„ parseImplicit Ø¹Ø´Ø§Ù† Ù†Ù…Ø±Ø± confirmedCharacters
     const snapshot = memoryManager.getSnapshot();
 
     const implicit = parseImplicitCharacterDialogueWithoutColon(
@@ -726,7 +680,7 @@ export const classifyLines = (
     ) {
       push({
         type: "action",
-        text: trimmed.replace(/^[-–—]\s*/, ""),
+        text: trimmed.replace(/^[-â€“â€”]\s*/, ""),
         confidence: Math.max(74, hybridResult.confidence),
         classificationMethod: hybridResult.classificationMethod,
       });
@@ -740,7 +694,7 @@ export const classifyLines = (
       classificationMethod: hybridResult.classificationMethod,
     });
 
-    // ── Self-Reflection: مراجعة ذاتية دورية أثناء الـ forward pass ──
+    // â”€â”€ Self-Reflection: Ù…Ø±Ø§Ø¬Ø¹Ø© Ø°Ø§ØªÙŠØ© Ø¯ÙˆØ±ÙŠØ© Ø£Ø«Ù†Ø§Ø¡ Ø§Ù„Ù€ forward pass â”€â”€
     if (PIPELINE_FLAGS.SELF_REFLECTION_ENABLED) {
       linesInChunk++;
       const lastType = classified[classified.length - 1]?.type;
@@ -761,7 +715,7 @@ export const classifyLines = (
     }
   }
 
-  // ── Self-Reflection: مراجعة الـ chunk الأخير المتبقي ──
+  // â”€â”€ Self-Reflection: Ù…Ø±Ø§Ø¬Ø¹Ø© Ø§Ù„Ù€ chunk Ø§Ù„Ø£Ø®ÙŠØ± Ø§Ù„Ù…ØªØ¨Ù‚ÙŠ â”€â”€
   if (PIPELINE_FLAGS.SELF_REFLECTION_ENABLED && linesInChunk >= 3) {
     reflectOnChunk(
       classified,
@@ -772,12 +726,12 @@ export const classifyLines = (
     );
   }
 
-  // ── Recorder: snapshot بعد الـ forward pass ──
+  // â”€â”€ Recorder: snapshot Ø¨Ø¹Ø¯ Ø§Ù„Ù€ forward pass â”€â”€
   pipelineRecorder.trackFile("paste-classifier.ts");
   pipelineRecorder.snapshot("forward-pass", classified);
   recordStageVotes(classified, "forward");
 
-  // ── ممر التصحيح الرجعي (retroactive correction pass) ──
+  // â”€â”€ Ù…Ù…Ø± Ø§Ù„ØªØµØ­ÙŠØ­ Ø§Ù„Ø±Ø¬Ø¹ÙŠ (retroactive correction pass) â”€â”€
   const _retroCorrections = retroactiveCorrectionPass(
     classified,
     memoryManager,
@@ -790,14 +744,14 @@ export const classifyLines = (
     });
   }
 
-  // ── Recorder: snapshot بعد الـ retroactive corrector ──
+  // â”€â”€ Recorder: snapshot Ø¨Ø¹Ø¯ Ø§Ù„Ù€ retroactive corrector â”€â”€
   pipelineRecorder.trackFile("paste-classifier.ts");
   pipelineRecorder.snapshot("retroactive", classified, {
     corrections: _retroCorrections,
   });
   recordStageVotes(classified, "retroactive");
 
-  // ── ممر التصنيف العكسي (Reverse Classification Pass) + دمج ──
+  // â”€â”€ Ù…Ù…Ø± Ø§Ù„ØªØµÙ†ÙŠÙ Ø§Ù„Ø¹ÙƒØ³ÙŠ (Reverse Classification Pass) + Ø¯Ù…Ø¬ â”€â”€
   if (PIPELINE_FLAGS.REVERSE_PASS_ENABLED && dcg) {
     const reverseResult = reverseClassificationPass(classified, dcg);
     const _mergeCorrections = mergeForwardReverse(classified, reverseResult);
@@ -809,12 +763,12 @@ export const classifyLines = (
     }
   }
 
-  // ── Recorder: snapshot بعد الـ reverse pass ──
+  // â”€â”€ Recorder: snapshot Ø¨Ø¹Ø¯ Ø§Ù„Ù€ reverse pass â”€â”€
   pipelineRecorder.trackFile("paste-classifier.ts");
   pipelineRecorder.snapshot("reverse-pass", classified);
   recordStageVotes(classified, "reverse");
 
-  // ── ممر Viterbi للتحسين التسلسلي (Structural Sequence Optimizer) ──
+  // â”€â”€ Ù…Ù…Ø± Viterbi Ù„Ù„ØªØ­Ø³ÙŠÙ† Ø§Ù„ØªØ³Ù„Ø³Ù„ÙŠ (Structural Sequence Optimizer) â”€â”€
   const preSeeded = memoryManager.getPreSeededCharacters();
   const _seqOptResult = optimizeSequence(classified, preSeeded);
   if (_seqOptResult.totalDisagreements > 0) {
@@ -825,12 +779,12 @@ export const classifyLines = (
         .slice(0, 5)
         .map(
           (d) =>
-            `L${d.lineIndex}:${d.forwardType}→${d.viterbiType}(${d.disagreementStrength})`
+            `L${d.lineIndex}:${d.forwardType}â†’${d.viterbiType}(${d.disagreementStrength})`
         ),
     });
   }
 
-  // ── Viterbi Feedback Loop: تطبيق الاقتراحات القوية ──
+  // â”€â”€ Viterbi Feedback Loop: ØªØ·Ø¨ÙŠÙ‚ Ø§Ù„Ø§Ù‚ØªØ±Ø§Ø­Ø§Øª Ø§Ù„Ù‚ÙˆÙŠØ© â”€â”€
   if (PIPELINE_FLAGS.VITERBI_OVERRIDE_ENABLED) {
     const _viterbiOverrides = applyViterbiOverrides(classified, _seqOptResult);
     if (_viterbiOverrides > 0) {
@@ -841,14 +795,14 @@ export const classifyLines = (
     }
   }
 
-  // ── Recorder: snapshot بعد Viterbi ──
+  // â”€â”€ Recorder: snapshot Ø¨Ø¹Ø¯ Viterbi â”€â”€
   pipelineRecorder.trackFile("paste-classifier.ts");
   pipelineRecorder.snapshot("viterbi", classified, {
     disagreements: _seqOptResult.totalDisagreements,
   });
   recordStageVotes(classified, "viterbi");
 
-  // ── Suspicion Engine: تحليل الاشتباه والإصلاح المحلي ──
+  // â”€â”€ Suspicion Engine: ØªØ­Ù„ÙŠÙ„ Ø§Ù„Ø§Ø´ØªØ¨Ø§Ù‡ ÙˆØ§Ù„Ø¥ØµÙ„Ø§Ø­ Ø§Ù„Ù…Ø­Ù„ÙŠ â”€â”€
   const _suspicionTraces = collectTracesFromMap(
     classified,
     traceCollector.getAllVotes()
@@ -876,15 +830,19 @@ export const classifyLines = (
     cases: _suspicionResult.cases.length,
     fixes: _suspicionFixes,
   });
+  agentReviewLogger.telemetry("paste-pipeline-stage", {
+    stage: "suspicion-engine-complete",
+    cases: _suspicionResult.cases.length,
+    fixes: _suspicionFixes,
+    actions: _suspicionResult.actions.length,
+  });
 
-  // تخزين نتيجة Viterbi على المصفوفة لاستخدامها في agent review
-  (
-    classified as ClassifiedDraftWithId[] & {
-      _sequenceOptimization?: SequenceOptimizationResult;
-    }
-  )._sequenceOptimization = _seqOptResult;
+  // ØªØ®Ø²ÙŠÙ† Ù†ØªÙŠØ¬Ø© Viterbi Ø¹Ù„Ù‰ Ø§Ù„Ù…ØµÙÙˆÙØ© Ù„Ø§Ø³ØªØ®Ø¯Ø§Ù…Ù‡Ø§ ÙÙŠ agent review
+  const pipelineState = classified as ClassifiedDraftPipelineState;
+  pipelineState._sequenceOptimization = _seqOptResult;
+  pipelineState._suspicionCases = _suspicionResult.cases;
 
-  // ── diagnostic: ملخص نتائج التصنيف للمقارنة ──
+  // â”€â”€ diagnostic: Ù…Ù„Ø®Øµ Ù†ØªØ§Ø¦Ø¬ Ø§Ù„ØªØµÙ†ÙŠÙ Ù„Ù„Ù…Ù‚Ø§Ø±Ù†Ø© â”€â”€
   const _diagTypeDist: Record<string, number> = {};
   for (const item of classified) {
     _diagTypeDist[item.type] = (_diagTypeDist[item.type] ?? 0) + 1;
@@ -906,617 +864,10 @@ export const classifyLines = (
   return classified;
 };
 
-const elementTypeToLineType = (type: ElementType): LineType => {
-  return type;
-};
-
-const normalizeAgentDecisionType = (type: LineType): LineType => {
-  if (type === "scene_header_1" || type === "scene_header_2") {
-    return "scene_header_top_line";
-  }
-  return type;
-};
-
-const lineTypeToElementType = (type: LineType): ElementType | null => {
-  const normalizedType = normalizeAgentDecisionType(type);
-  return normalizedType;
-};
-
-const toClassifiedLineRecords = (
-  classified: ClassifiedDraft[]
-): ClassifiedLine[] =>
-  classified.map((item, index) => ({
-    lineIndex: index,
-    text: item.text,
-    assignedType: item.type,
-    originalConfidence: item.confidence,
-    classificationMethod: item.classificationMethod,
-    sourceHintType: item.sourceHintType,
-    sourceProfile: item.sourceProfile,
-  }));
-
-interface ReviewRoutingStats {
-  countPass: number;
-  countLocalReview: number;
-  countAgentCandidate: number;
-  countAgentForced: number;
-}
-
-const EMBEDDED_NARRATIVE_SUSPICION_FLOOR = 96;
-
-const promoteHighSeverityMismatches = (
-  suspiciousLines: readonly SuspiciousLine[]
-): SuspiciousLine[] =>
-  suspiciousLines.map((suspicious) => {
-    if (
-      suspicious.routingBand === "agent-candidate" &&
-      suspicious.findings.some(
-        (f) =>
-          f.detectorId === "content-type-mismatch" &&
-          f.suspicionScore >= EMBEDDED_NARRATIVE_SUSPICION_FLOOR
-      )
-    ) {
-      return {
-        ...suspicious,
-        routingBand: "agent-forced" as const,
-        escalationScore: Math.max(suspicious.escalationScore, 90),
-      };
-    }
-    return suspicious;
-  });
-
-const summarizeRoutingStats = (
-  totalReviewed: number,
-  suspiciousLines: readonly SuspiciousLine[]
-): ReviewRoutingStats => {
-  const stats: ReviewRoutingStats = {
-    countPass: Math.max(0, totalReviewed - suspiciousLines.length),
-    countLocalReview: 0,
-    countAgentCandidate: 0,
-    countAgentForced: 0,
-  };
-
-  for (const line of suspiciousLines) {
-    if (line.routingBand === "local-review") {
-      stats.countLocalReview += 1;
-      continue;
-    }
-    if (line.routingBand === "agent-candidate") {
-      stats.countAgentCandidate += 1;
-      continue;
-    }
-    if (line.routingBand === "agent-forced") {
-      stats.countAgentForced += 1;
-    }
-  }
-
-  return stats;
-};
-
-const shouldEscalateToAgent = (suspicious: SuspiciousLine): boolean => {
-  if (suspicious.routingBand === "agent-forced") return true;
-  if (suspicious.routingBand !== "agent-candidate") return false;
-  return suspicious.criticalMismatch || suspicious.distinctDetectors >= 2;
-};
-
-export const selectSuspiciousLinesForAgent = (
-  packet: LLMReviewPacket
-): SuspiciousLine[] => {
-  const forced = packet.suspiciousLines
-    .filter((line) => line.routingBand === "agent-forced")
-    .sort((a, b) => b.escalationScore - a.escalationScore);
-
-  const candidates = packet.suspiciousLines
-    .filter(
-      (line) =>
-        line.routingBand === "agent-candidate" && shouldEscalateToAgent(line)
-    )
-    .sort((a, b) => b.escalationScore - a.escalationScore);
-
-  if (forced.length === 0 && candidates.length === 0) return [];
-
-  const maxToAgent = Math.max(
-    1,
-    Math.ceil(packet.totalReviewed * AGENT_REVIEW_MAX_RATIO)
-  );
-  if (forced.length >= maxToAgent) {
-    return forced;
-  }
-
-  const remainingSlots = Math.max(0, maxToAgent - forced.length);
-  return [...forced, ...candidates.slice(0, remainingSlots)];
-};
+// â”€â”€â”€ Final Review Layer (T012 + T015 + T023â€“T025 + T027) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 /**
- * تحويل استجابة الوكيل إلى بيانات وصفية معتمدة (Command API v2).
- * يتعامل مع:
- * - commandCount (بدل decisionCount)
- * - missingItemIds (بدل missingItemIndexes)
- * - forcedItemIds (بدل forcedItemIndexes)
- * - unresolvedForcedItemIds (بدل unresolvedForcedItemIndexes)
- */
-const toValidAgentReviewMeta = (
-  raw: unknown
-): AgentReviewResponseMeta | undefined => {
-  if (!raw || typeof raw !== "object") return undefined;
-
-  const record = raw as {
-    requestedCount?: unknown;
-    commandCount?: unknown;
-    missingItemIds?: unknown;
-    forcedItemIds?: unknown;
-    unresolvedForcedItemIds?: unknown;
-  };
-
-  const requestedCount =
-    typeof record.requestedCount === "number" &&
-    Number.isFinite(record.requestedCount)
-      ? Math.max(0, Math.trunc(record.requestedCount))
-      : 0;
-
-  const commandCount =
-    typeof record.commandCount === "number" &&
-    Number.isFinite(record.commandCount)
-      ? Math.max(0, Math.trunc(record.commandCount))
-      : 0;
-
-  return {
-    requestedCount,
-    commandCount,
-    missingItemIds: toNormalizedMetaIds(record.missingItemIds),
-    forcedItemIds: toNormalizedMetaIds(record.forcedItemIds),
-    unresolvedForcedItemIds: toNormalizedMetaIds(
-      record.unresolvedForcedItemIds
-    ),
-  };
-};
-
-/**
- * تحويل استجابة الوكيل إلى أوامر معتمدة (Command API v2).
- * يتعامل مع نوعي الأوامر:
- * - relabel: إعادة تصنيف عنصر (itemId → newType)
- * - split: تقسيم عنصر إلى عنصرين (itemId → leftType + rightType)
- */
-const toValidAgentCommands = (raw: unknown): AgentCommand[] => {
-  if (!Array.isArray(raw)) return [];
-
-  return raw
-    .map((entry) => {
-      if (!entry || typeof entry !== "object") return null;
-
-      const opRaw = (entry as { op?: unknown }).op;
-      const itemIdRaw = (entry as { itemId?: unknown }).itemId;
-      const confidenceRaw = (entry as { confidence?: unknown }).confidence;
-      const reasonRaw = (entry as { reason?: unknown }).reason;
-
-      // التحقق من الحقول المشتركة
-      if (typeof itemIdRaw !== "string" || !itemIdRaw.trim()) return null;
-      const itemId = itemIdRaw.trim();
-
-      const confidence =
-        typeof confidenceRaw === "number" && Number.isFinite(confidenceRaw)
-          ? Math.max(0, Math.min(1, confidenceRaw))
-          : 0.85;
-
-      const reason =
-        typeof reasonRaw === "string" && reasonRaw.trim()
-          ? reasonRaw.trim()
-          : "أمر بدون سبب مفصل";
-
-      // معالجة أوامر relabel
-      if (opRaw === "relabel") {
-        const newTypeRaw = (entry as { newType?: unknown }).newType;
-        if (typeof newTypeRaw !== "string") return null;
-        if (!VALID_AGENT_DECISION_TYPES.has(newTypeRaw as LineType))
-          return null;
-        const normalizedNewType = normalizeAgentDecisionType(
-          newTypeRaw as LineType
-        );
-
-        return {
-          op: "relabel" as const,
-          itemId,
-          newType: normalizedNewType,
-          confidence,
-          reason,
-        };
-      }
-
-      // معالجة أوامر split
-      if (opRaw === "split") {
-        const splitAtRaw = (entry as { splitAt?: unknown }).splitAt;
-        const leftTypeRaw = (entry as { leftType?: unknown }).leftType;
-        const rightTypeRaw = (entry as { rightType?: unknown }).rightType;
-
-        if (
-          typeof splitAtRaw !== "number" ||
-          !Number.isInteger(splitAtRaw) ||
-          splitAtRaw <= 0
-        )
-          return null;
-        if (typeof leftTypeRaw !== "string") return null;
-        if (typeof rightTypeRaw !== "string") return null;
-
-        if (!VALID_AGENT_DECISION_TYPES.has(leftTypeRaw as LineType))
-          return null;
-        if (!VALID_AGENT_DECISION_TYPES.has(rightTypeRaw as LineType))
-          return null;
-        const normalizedLeftType = normalizeAgentDecisionType(
-          leftTypeRaw as LineType
-        );
-        const normalizedRightType = normalizeAgentDecisionType(
-          rightTypeRaw as LineType
-        );
-
-        return {
-          op: "split" as const,
-          itemId,
-          splitAt: Number(splitAtRaw),
-          leftType: normalizedLeftType,
-          rightType: normalizedRightType,
-          confidence,
-          reason,
-        };
-      }
-
-      return null;
-    })
-    .filter((entry): entry is AgentCommand => entry !== null);
-};
-
-/**
- * تحويل استجابة الوكيل إلى بنية معتمدة (Command API v2).
- * يدعم:
- * - commands (بدل decisions)
- * - importOpId, requestId, apiVersion, mode
- * - status جديد: "applied" | "partial" | "skipped" | "error"
- *   (لم يعد هناك "warning")
- */
-const normalizeAgentReviewPayload = (
-  payload: unknown,
-  fallbackText?: string
-): AgentReviewResponsePayload => {
-  if (!payload || typeof payload !== "object") {
-    const parsedFallback = fallbackText
-      ? parseReviewCommands(fallbackText)
-      : [];
-    return {
-      status: parsedFallback.length > 0 ? "applied" : "skipped",
-      model: AGENT_REVIEW_MODEL,
-      commands: parsedFallback,
-      message:
-        parsedFallback.length > 0
-          ? "تم التطبيق من تحليل نص الاستجابة (fallback)."
-          : "بيانات استجابة فارغة أو غير صالحة.",
-      latencyMs: 0,
-      importOpId: generateItemId(),
-      requestId: "",
-      apiVersion: COMMAND_API_VERSION,
-      mode: CLASSIFICATION_MODE,
-      meta: undefined,
-    };
-  }
-
-  const record = payload as {
-    message?: unknown;
-    status?: unknown;
-    model?: unknown;
-    commands?: unknown;
-    latencyMs?: unknown;
-    importOpId?: unknown;
-    requestId?: unknown;
-    apiVersion?: unknown;
-    mode?: unknown;
-    meta?: unknown;
-  };
-
-  // التحقق من الـ status وتحويل warning → partial
-  let status: "applied" | "partial" | "skipped" | "error" = "error";
-  if (
-    record.status === "applied" ||
-    record.status === "partial" ||
-    record.status === "skipped" ||
-    record.status === "error"
-  ) {
-    status = record.status;
-  } else if (record.status === "warning") {
-    // التحويل التلقائي من warning إلى partial
-    status = "partial";
-  }
-
-  const directCommands = toValidAgentCommands(record.commands);
-  const textCandidates = [
-    typeof record.message === "string" ? record.message : "",
-    fallbackText ?? "",
-  ].filter(Boolean);
-
-  let parsedCommands = directCommands;
-  if (parsedCommands.length === 0) {
-    for (const candidate of textCandidates) {
-      const parsed = parseReviewCommands(candidate);
-      if (parsed.length > 0) {
-        parsedCommands = parsed;
-        break;
-      }
-    }
-  }
-
-  // إذا كان لدينا أوامر لكن الـ status خطأ، غيّره إلى applied
-  const normalizedStatus: "applied" | "partial" | "skipped" | "error" =
-    parsedCommands.length > 0 && status === "error" ? "applied" : status;
-
-  return {
-    status: normalizedStatus,
-    model:
-      typeof record.model === "string" && record.model.trim()
-        ? record.model.trim()
-        : AGENT_REVIEW_MODEL,
-    commands: parsedCommands,
-    message:
-      typeof record.message === "string" && record.message.trim()
-        ? record.message.trim()
-        : normalizedStatus === "applied"
-          ? "تم تطبيق أوامر الوكيل."
-          : "لم يتم إرجاع أوامر قابلة للتطبيق من الوكيل.",
-    latencyMs:
-      typeof record.latencyMs === "number" && Number.isFinite(record.latencyMs)
-        ? record.latencyMs
-        : 0,
-    importOpId:
-      typeof record.importOpId === "string" && record.importOpId.trim()
-        ? record.importOpId.trim()
-        : generateItemId(),
-    requestId:
-      typeof record.requestId === "string" ? record.requestId.trim() : "",
-    apiVersion:
-      typeof record.apiVersion === "string" &&
-      record.apiVersion.trim() === "2.0"
-        ? "2.0"
-        : COMMAND_API_VERSION,
-    mode:
-      typeof record.mode === "string" && record.mode.trim() === "auto-apply"
-        ? "auto-apply"
-        : CLASSIFICATION_MODE,
-    meta: toValidAgentReviewMeta(record.meta),
-  };
-};
-
-/**
- * إرسال طلب مراجعة إلى الوكيل عبر HTTP.
- * يدعم إعادة المحاولة المقتولة بالمهلة الزمنية والتعامل مع الأخطاء الشبكية.
- */
-const requestAgentReview = async (
-  request: AgentReviewRequestPayload
-): Promise<AgentReviewResponsePayload> => {
-  if (shouldSkipAgentReviewInRuntime()) {
-    agentReviewLogger.error("request-runtime-not-supported", {
-      sessionId: request.sessionId,
-    });
-    throw new Error(
-      "Agent review backend path is mandatory and requires a browser runtime."
-    );
-  }
-
-  if (!AGENT_REVIEW_ENDPOINT) {
-    agentReviewLogger.error("request-missing-endpoint", {
-      sessionId: request.sessionId,
-    });
-    throw new Error(
-      "عنوان خادم المراجعة غير مضبوط — تأكد من ضبط VITE_FILE_IMPORT_BACKEND_URL في ملف .env"
-    );
-  }
-
-  let lastError: unknown = null;
-  const startedAt = Date.now();
-  const deadlineAt = startedAt + AGENT_REVIEW_DEADLINE_MS;
-
-  for (let attempt = 1; attempt <= AGENT_REVIEW_MAX_ATTEMPTS; attempt += 1) {
-    const remainingBeforeAttempt = deadlineAt - Date.now();
-    if (remainingBeforeAttempt <= 0) {
-      throw new Error(
-        `Agent review exceeded deadline (${AGENT_REVIEW_DEADLINE_MS}ms).`
-      );
-    }
-
-    if (pendingAgentAbortController) {
-      pendingAgentAbortController.abort();
-    }
-    const controller = new AbortController();
-    pendingAgentAbortController = controller;
-    const timeoutForAttempt = Math.min(
-      AGENT_REVIEW_MAX_TIMEOUT_MS,
-      Math.max(AGENT_REVIEW_MIN_TIMEOUT_MS, remainingBeforeAttempt - 200)
-    );
-
-    try {
-      const response = await fetchWithTimeout(
-        AGENT_REVIEW_ENDPOINT,
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify(request),
-        },
-        controller,
-        timeoutForAttempt
-      );
-
-      if (!response.ok) {
-        const body = await response.text();
-        const isRetryable = isRetryableHttpStatus(response.status);
-        agentReviewLogger.error("request-http-error", {
-          sessionId: request.sessionId,
-          status: response.status,
-          body,
-          attempt,
-          isRetryable,
-        });
-        if (isRetryable && attempt < AGENT_REVIEW_MAX_ATTEMPTS) {
-          // Longer delay for overload errors (server already retried internally)
-          const isOverload =
-            response.status === 429 ||
-            response.status === 529 ||
-            response.status === 503;
-          const delay = isOverload
-            ? Math.max(AGENT_REVIEW_RETRY_DELAY_MS * attempt * 4, 3_000)
-            : AGENT_REVIEW_RETRY_DELAY_MS * attempt;
-          await waitBeforeRetry(delay);
-          continue;
-        }
-        throw new Error(
-          `Agent review route failed (${response.status}): ${body}`
-        );
-      }
-
-      const responseText = await response.text();
-      let parsedPayload: unknown;
-      try {
-        parsedPayload = JSON.parse(responseText);
-      } catch {
-        parsedPayload = responseText;
-      }
-      const payload = normalizeAgentReviewPayload(parsedPayload, responseText);
-      agentReviewLogger.telemetry("request-response", {
-        sessionId: request.sessionId,
-        status: payload.status,
-        commands: payload.commands?.length ?? 0,
-        model: payload.model,
-        latencyMs: payload.latencyMs,
-        apiVersion: payload.apiVersion,
-        mode: payload.mode,
-        requestedCount: payload.meta?.requestedCount ?? 0,
-        commandCount: payload.meta?.commandCount ?? 0,
-        unresolvedForced: payload.meta?.unresolvedForcedItemIds?.length ?? 0,
-        attempt,
-      });
-      if (payload.status === "error") {
-        const requestIdSuffix = payload.requestId
-          ? ` [requestId=${payload.requestId}]`
-          : "";
-        throw new Error(
-          `Agent review status is ${payload.status}${requestIdSuffix}: ${payload.message}`
-        );
-      }
-      return payload;
-    } catch (error) {
-      lastError = error;
-      const aborted = (error as DOMException)?.name === "AbortError";
-      const network = error instanceof TypeError;
-      const retryable = aborted || network;
-      const remainingAfterAttempt = deadlineAt - Date.now();
-
-      // تصنيف الخطأ حسب نوعه الفعلي لتسهيل الـ debugging
-      const isAgentStatusError =
-        error instanceof Error &&
-        error.message.startsWith("Agent review status is ");
-
-      if (aborted) {
-        agentReviewLogger.warn("request-aborted", {
-          sessionId: request.sessionId,
-          attempt,
-          timeoutForAttempt,
-          remainingAfterAttempt,
-        });
-      } else if (network) {
-        agentReviewLogger.warn("request-network-error", {
-          sessionId: request.sessionId,
-          attempt,
-          error: error.message,
-          remainingAfterAttempt,
-        });
-      } else if (isAgentStatusError) {
-        // الباكإند رجع حالة خطأ معروفة — مش خطأ غير متوقع
-        agentReviewLogger.error("request-agent-status-error", {
-          sessionId: request.sessionId,
-          attempt,
-          error: (error as Error).message,
-          remainingAfterAttempt,
-        });
-      } else {
-        agentReviewLogger.error("request-unhandled-error", {
-          sessionId: request.sessionId,
-          attempt,
-          error,
-          remainingAfterAttempt,
-        });
-      }
-
-      if (
-        retryable &&
-        attempt < AGENT_REVIEW_MAX_ATTEMPTS &&
-        remainingAfterAttempt > AGENT_REVIEW_MIN_TIMEOUT_MS
-      ) {
-        await waitBeforeRetry(AGENT_REVIEW_RETRY_DELAY_MS * attempt);
-        continue;
-      }
-
-      throw error;
-    } finally {
-      if (pendingAgentAbortController === controller) {
-        pendingAgentAbortController = null;
-      }
-    }
-  }
-
-  throw new Error(
-    `Agent review request failed after ${AGENT_REVIEW_MAX_ATTEMPTS} attempts and ${Date.now() - startedAt}ms: ${String(lastError)}`
-  );
-};
-
-/**
- * بناء بيانات وصفية احتياطية للمراجعة (في حالة فشل الاستجابة من الوكيل).
- * يحسب عدد الأوامر المطبقة والمفقودة والمصادمة.
- */
-const buildAgentReviewMetaFallback = (
-  requestPayload: AgentReviewRequestPayload,
-  commands: readonly AgentCommand[],
-  classified: readonly ClassifiedDraftWithId[]
-): AgentReviewResponseMeta => {
-  const commandByItemId = new Map<string, AgentCommand>();
-  for (const command of commands) {
-    commandByItemId.set(command.itemId, command);
-  }
-
-  const missingItemIds = requestPayload.requiredItemIds.filter(
-    (itemId) => !commandByItemId.has(itemId)
-  );
-
-  // حساب الأوامر المصادمة (forced) التي لم تُطبق فعلياً
-  // If the agent returned no command for a forced item, it means the agent
-  // reviewed it and confirmed the current classification is correct.
-  const unresolvedForcedItemIds = requestPayload.forcedItemIds.filter(
-    (itemId) => {
-      // بحث عن العنصر بـ itemId
-      const originalIndex = classified.findIndex(
-        (item) => item._itemId === itemId
-      );
-      // If the item doesn't exist in the classified list, it's a data error
-      if (originalIndex < 0) return true;
-
-      // If no command was returned, the agent confirmed the current type.
-      // This is a valid resolution — not an error.
-      const command = commandByItemId.get(itemId);
-      if (!command) return false;
-
-      // relabel and split are always considered resolved
-      return false;
-    }
-  );
-
-  return {
-    requestedCount: requestPayload.requiredItemIds.length,
-    commandCount: commandByItemId.size,
-    missingItemIds: toNormalizedMetaIds(missingItemIds),
-    forcedItemIds: toNormalizedMetaIds(requestPayload.forcedItemIds),
-    unresolvedForcedItemIds: toNormalizedMetaIds(unresolvedForcedItemIds),
-  };
-};
-
-// ─── Final Review Layer (T012 + T015 + T023–T025 + T027) ─────────────────────
-
-/**
- * T023 — ترقية حالات agent-candidate → agent-forced عند alternative-pull ≥ 96
+ * T023 â€” ØªØ±Ù‚ÙŠØ© Ø­Ø§Ù„Ø§Øª agent-candidate â†’ agent-forced Ø¹Ù†Ø¯ alternative-pull â‰¥ 96
  */
 const promoteHighSeveritySuspicionCases = (
   cases: readonly SuspicionCase[]
@@ -1533,17 +884,17 @@ const promoteHighSeveritySuspicionCases = (
   });
 
 /**
- * T024 — اختيار الأسطر المرسلة للوكيل مع احترام السقف
+ * T024 â€” Ø§Ø®ØªÙŠØ§Ø± Ø§Ù„Ø£Ø³Ø·Ø± Ø§Ù„Ù…Ø±Ø³Ù„Ø© Ù„Ù„ÙˆÙƒÙŠÙ„ Ù…Ø¹ Ø§Ø­ØªØ±Ø§Ù… Ø§Ù„Ø³Ù‚Ù
  */
 const selectSuspicionCasesForAgent = (
   cases: readonly SuspicionCase[],
   totalReviewed: number
 ): SuspicionCase[] => {
-  const cap = Math.ceil(totalReviewed * AGENT_REVIEW_MAX_RATIO);
+  const cap = Math.ceil(totalReviewed * FINAL_REVIEW_MAX_RATIO);
   const eligible = cases.filter(
     (c) => c.band === "agent-candidate" || c.band === "agent-forced"
   );
-  // agent-forced أولاً، ثم agent-candidate حسب score تنازلياً
+  // agent-forced Ø£ÙˆÙ„Ø§Ù‹ØŒ Ø«Ù… agent-candidate Ø­Ø³Ø¨ score ØªÙ†Ø§Ø²Ù„ÙŠØ§Ù‹
   const sorted = [...eligible].sort((a, b) => {
     if (a.band === "agent-forced" && b.band !== "agent-forced") return -1;
     if (b.band === "agent-forced" && a.band !== "agent-forced") return 1;
@@ -1553,7 +904,7 @@ const selectSuspicionCasesForAgent = (
 };
 
 /**
- * T027 — حساب إحصائيات التوجيه من SuspicionCase[]
+ * T027 â€” Ø­Ø³Ø§Ø¨ Ø¥Ø­ØµØ§Ø¦ÙŠØ§Øª Ø§Ù„ØªÙˆØ¬ÙŠÙ‡ Ù…Ù† SuspicionCase[]
  */
 const computeFinalReviewRoutingStats = (
   cases: readonly SuspicionCase[]
@@ -1582,7 +933,7 @@ const computeFinalReviewRoutingStats = (
 };
 
 /**
- * هل يجب إرسال الحالة للوكيل (ضمن طبقة المراجعة النهائية)
+ * Ù‡Ù„ ÙŠØ¬Ø¨ Ø¥Ø±Ø³Ø§Ù„ Ø§Ù„Ø­Ø§Ù„Ø© Ù„Ù„ÙˆÙƒÙŠÙ„ (Ø¶Ù…Ù† Ø·Ø¨Ù‚Ø© Ø§Ù„Ù…Ø±Ø§Ø¬Ø¹Ø© Ø§Ù„Ù†Ù‡Ø§Ø¦ÙŠØ©)
  */
 const shouldEscalateSuspicionCaseToAgent = (c: SuspicionCase): boolean => {
   if (c.band === "agent-forced") return true;
@@ -1599,11 +950,11 @@ const shouldEscalateSuspicionCaseToAgent = (c: SuspicionCase): boolean => {
 };
 
 /**
- * T012 + T015 + T025 — طبقة المراجعة النهائية
+ * T012 + T015 + T025 â€” Ø·Ø¨Ù‚Ø© Ø§Ù„Ù…Ø±Ø§Ø¬Ø¹Ø© Ø§Ù„Ù†Ù‡Ø§Ø¦ÙŠØ©
  *
- * تستقبل قائمة الأسطر المصنّفة + حالات الاشتباه من محرك الاشتباه،
- * وترسل المشبوهات منها إلى نقطة النهاية `/api/final-review`،
- * ثم تطبّق أوامر `relabel` المُرجَعة على القائمة.
+ * ØªØ³ØªÙ‚Ø¨Ù„ Ù‚Ø§Ø¦Ù…Ø© Ø§Ù„Ø£Ø³Ø·Ø± Ø§Ù„Ù…ØµÙ†Ù‘ÙØ© + Ø­Ø§Ù„Ø§Øª Ø§Ù„Ø§Ø´ØªØ¨Ø§Ù‡ Ù…Ù† Ù…Ø­Ø±Ùƒ Ø§Ù„Ø§Ø´ØªØ¨Ø§Ù‡ØŒ
+ * ÙˆØªØ±Ø³Ù„ Ø§Ù„Ù…Ø´Ø¨ÙˆÙ‡Ø§Øª Ù…Ù†Ù‡Ø§ Ø¥Ù„Ù‰ Ù†Ù‚Ø·Ø© Ø§Ù„Ù†Ù‡Ø§ÙŠØ© `/api/final-review`ØŒ
+ * Ø«Ù… ØªØ·Ø¨Ù‘Ù‚ Ø£ÙˆØ§Ù…Ø± `relabel` Ø§Ù„Ù…ÙØ±Ø¬ÙŽØ¹Ø© Ø¹Ù„Ù‰ Ø§Ù„Ù‚Ø§Ø¦Ù…Ø©.
  */
 export const applyFinalReviewLayer = async (
   classified: ClassifiedDraftWithId[],
@@ -1614,28 +965,30 @@ export const applyFinalReviewLayer = async (
   classified: ClassifiedDraftWithId[];
   stats: FinalReviewRoutingStats;
 }> => {
-  // T023: ترقية الحالات ذات alternative-pull العالي
+  // T023: ØªØ±Ù‚ÙŠØ© Ø§Ù„Ø­Ø§Ù„Ø§Øª Ø°Ø§Øª alternative-pull Ø§Ù„Ø¹Ø§Ù„ÙŠ
   const promoted = promoteHighSeveritySuspicionCases(suspicionCases);
 
-  // T027: حساب الإحصائيات
+  // T027: Ø­Ø³Ø§Ø¨ Ø§Ù„Ø¥Ø­ØµØ§Ø¦ÙŠØ§Øª
   const stats = computeFinalReviewRoutingStats(promoted);
 
-  // T024: اختيار الحالات ضمن سقف النسبة
+  // T024: Ø§Ø®ØªÙŠØ§Ø± Ø§Ù„Ø­Ø§Ù„Ø§Øª Ø¶Ù…Ù† Ø³Ù‚Ù Ø§Ù„Ù†Ø³Ø¨Ø©
   const selected = selectSuspicionCasesForAgent(promoted, classified.length);
 
   if (selected.length === 0 || !FINAL_REVIEW_ENDPOINT) {
     return { classified, stats };
   }
 
-  // T013 + T015: بناء حمولة كل سطر مشبوه
+  // T013 + T015: Ø¨Ù†Ø§Ø¡ Ø­Ù…ÙˆÙ„Ø© ÙƒÙ„ Ø³Ø·Ø± Ù…Ø´Ø¨ÙˆÙ‡
   const suspiciousLines: FinalReviewSuspiciousLinePayload[] = [];
   for (const c of selected) {
     if (!shouldEscalateSuspicionCaseToAgent(c)) continue;
+    const classifiedItem = classified[c.lineIndex];
+    const itemId = classifiedItem?._itemId ?? `item-${c.lineIndex}`;
     const payload = buildFinalReviewSuspiciousLinePayload({
       suspicionCase: c,
       classified,
-      itemId: `item-${c.lineIndex}`,
-      fingerprint: `${c.classifiedLine.type}:${c.lineIndex}`,
+      itemId,
+      fingerprint: `${itemId}:${simpleHash(c.classifiedLine.text)}`,
     });
     if (payload) suspiciousLines.push(payload);
   }
@@ -1667,7 +1020,7 @@ export const applyFinalReviewLayer = async (
     }),
   };
 
-  // إرسال الطلب
+  // Ø¥Ø±Ø³Ø§Ù„ Ø§Ù„Ø·Ù„Ø¨
   try {
     const { default: axios } = await import("axios");
     const response = await axios.post<FinalReviewResponsePayload>(
@@ -1685,7 +1038,7 @@ export const applyFinalReviewLayer = async (
       return { classified, stats };
     }
 
-    // تطبيق أوامر relabel
+    // ØªØ·Ø¨ÙŠÙ‚ Ø£ÙˆØ§Ù…Ø± relabel
     const result: ClassifiedDraftWithId[] = [...classified];
     for (const cmd of data.commands) {
       if (cmd.op === "relabel") {
@@ -1713,664 +1066,11 @@ export const applyFinalReviewLayer = async (
   }
 };
 
-// ─────────────────────────────────────────────────────────────────────────────
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 /**
- * تطبيق مراجعة الوكيل عن بُعد (V2 مع Command API).
- * يرسل العناصر المشبوهة إلى الوكيل ويطبق الأوامر المُرجعة:
- * - relabel: إعادة تصنيف عنصر
- * - split: تقسيم عنصر إلى عنصرين
- */
-const applyRemoteAgentReviewV2 = async (
-  classified: ClassifiedDraftWithId[]
-): Promise<ClassifiedDraftWithId[]> => {
-  if (classified.length === 0) return classified;
-
-  // استخراج نتيجة Viterbi المخزنة من classifyLines (لو موجودة)
-  const storedSeqOpt = (
-    classified as ClassifiedDraftWithId[] & {
-      _sequenceOptimization?: SequenceOptimizationResult;
-    }
-  )._sequenceOptimization;
-
-  const reviewInput = toClassifiedLineRecords(classified);
-  const reviewer = new PostClassificationReviewer(
-    storedSeqOpt?.disagreements?.length
-      ? { viterbiDisagreements: storedSeqOpt.disagreements }
-      : undefined
-  );
-  const basePacket = reviewer.review(reviewInput);
-  const reviewPacket: LLMReviewPacket = {
-    ...basePacket,
-    suspiciousLines: promoteHighSeverityMismatches(basePacket.suspiciousLines),
-  };
-  const routingStats = summarizeRoutingStats(
-    reviewPacket.totalReviewed,
-    reviewPacket.suspiciousLines
-  );
-  const selectedForAgent = selectSuspiciousLinesForAgent(reviewPacket);
-  const selectedItemIndexesPreview = toUniqueSortedIndexes(
-    selectedForAgent.map((line) => line.line.lineIndex)
-  );
-  const forcedItemIndexesPreview = toUniqueSortedIndexes(
-    selectedForAgent
-      .filter((line) => line.routingBand === "agent-forced")
-      .map((line) => line.line.lineIndex)
-  );
-
-  const suspectSnapshots = selectedForAgent.map((suspicious) => ({
-    itemIndex: suspicious.line.lineIndex,
-    assignedType: suspicious.line.assignedType,
-    routingBand: suspicious.routingBand,
-    escalationScore: suspicious.escalationScore,
-    reason: suspicious.findings[0]?.reason ?? "",
-  }));
-
-  agentReviewLogger.telemetry("packet-built", {
-    totalReviewed: reviewPacket.totalReviewed,
-    totalSuspicious: reviewPacket.totalSuspicious,
-    suspicionRate: reviewPacket.suspicionRate,
-    ...routingStats,
-    countSentToAgent: selectedForAgent.length,
-    sentItemIndexes: selectedItemIndexesPreview,
-    forcedItemIndexes: forcedItemIndexesPreview,
-  });
-  if (suspectSnapshots.length > 0) {
-    agentReviewLogger.debug("packet-suspects-snapshot", {
-      lines: suspectSnapshots,
-    });
-  }
-  if (selectedForAgent.length === 0) {
-    agentReviewLogger.info("packet-empty-forwarded", {
-      ...routingStats,
-      countSentToAgent: 0,
-    });
-  }
-
-  const reviewPacketText = reviewer.formatForLLM(reviewPacket);
-
-  const suspiciousPayload = selectedForAgent
-    .map((rawSuspect) => {
-      const lineIndex = rawSuspect.line.lineIndex;
-      const item = classified[lineIndex];
-      if (!item || !item._itemId) return null;
-
-      const assignedType = elementTypeToLineType(item.type);
-      if (!REVIEWABLE_AGENT_TYPES.has(assignedType)) return null;
-
-      const contextLines = rawSuspect.contextLines
-        .map((line) => {
-          const mapped = elementTypeToLineType(line.assignedType);
-          if (!REVIEWABLE_AGENT_TYPES.has(mapped)) return null;
-          return {
-            lineIndex: line.lineIndex,
-            assignedType: mapped,
-            text: line.text,
-          };
-        })
-        .filter(
-          (
-            value
-          ): value is {
-            lineIndex: number;
-            assignedType: LineType;
-            text: string;
-          } => value !== null
-        );
-
-      const routingBand: AgentReviewRequestPayload["suspiciousLines"][number]["routingBand"] =
-        rawSuspect.routingBand === "agent-forced"
-          ? "agent-forced"
-          : "agent-candidate";
-
-      return {
-        itemId: item._itemId,
-        lineIndex,
-        text: item.text,
-        assignedType,
-        totalSuspicion: rawSuspect.totalSuspicion,
-        reasons: rawSuspect.findings.map((finding) => finding.reason),
-        contextLines,
-        escalationScore: rawSuspect.escalationScore,
-        routingBand,
-        criticalMismatch: rawSuspect.criticalMismatch,
-        distinctDetectors: rawSuspect.distinctDetectors,
-        fingerprint: computeFingerprintSync(assignedType, item.text),
-      };
-    })
-    .filter((entry): entry is NonNullable<typeof entry> => entry !== null);
-
-  if (suspiciousPayload.length === 0) {
-    agentReviewLogger.info("packet-empty-after-filtering-forwarded", {
-      totalSuspicious: reviewPacket.totalSuspicious,
-      ...routingStats,
-      countSentToAgent: 0,
-    });
-  }
-
-  // ─── ميزانية الحزمة: اقتطاع إذا تجاوزت الحدود (packet-budget) ───
-  const packetItems = suspiciousPayload.map((entry) =>
-    prepareItemForPacket(
-      entry.itemId,
-      entry.text,
-      entry.totalSuspicion,
-      entry.routingBand === "agent-forced",
-      DEFAULT_PACKET_BUDGET
-    )
-  );
-  const packetResult = buildPacketWithBudget(
-    packetItems,
-    DEFAULT_PACKET_BUDGET
-  );
-  if (packetResult.wasTruncated) {
-    const includedIds = new Set(packetResult.included.map((i) => i.itemId));
-    agentReviewLogger.warn("packet-budget-truncated", {
-      originalCount: suspiciousPayload.length,
-      includedCount: packetResult.included.length,
-      overflowCount: packetResult.overflow.length,
-      totalEstimatedChars: packetResult.totalEstimatedChars,
-    });
-    // تصفية الحزمة المُرسلة حسب الميزانية
-    suspiciousPayload.splice(
-      0,
-      suspiciousPayload.length,
-      ...suspiciousPayload.filter((entry) => includedIds.has(entry.itemId))
-    );
-  }
-
-  const sentItemIds = toNormalizedMetaIds(
-    suspiciousPayload.map((entry) => entry.itemId)
-  );
-  const forcedItemIds = toNormalizedMetaIds(
-    suspiciousPayload
-      .filter((entry) => entry.routingBand === "agent-forced")
-      .map((entry) => entry.itemId)
-  );
-  const emitAgentReviewSummary = (payload: {
-    status: string;
-    requestId: string;
-    commandsReceived: number;
-    commandsApplied: number;
-  }): void => {
-    agentReviewLogger.telemetry("agent-review-summary", {
-      totalReviewed: reviewPacket.totalReviewed,
-      totalSuspicious: reviewPacket.totalSuspicious,
-      itemsSent: suspiciousPayload.length,
-      commandsReceived: payload.commandsReceived,
-      commandsApplied: payload.commandsApplied,
-      status: payload.status,
-      requestId: payload.requestId,
-    });
-  };
-
-  const importOpId = generateItemId();
-
-  // بناء حالة العملية واللقطات (للربط مع command-engine)
-  const opState = createImportOperationState(importOpId, "paste");
-  for (const entry of suspiciousPayload) {
-    opState.snapshots.set(entry.itemId, {
-      itemId: entry.itemId,
-      fingerprint: entry.fingerprint,
-      type: entry.assignedType,
-      rawText: entry.text,
-    } satisfies ItemSnapshot);
-  }
-
-  // تسجيل بداية العملية
-  pipelineTelemetry.recordIngestionStart(importOpId, {
-    source: "paste",
-    trustLevel: "raw_text",
-    itemsProcessed: classified.length,
-  });
-
-  const requestPayload: AgentReviewRequestPayload = {
-    sessionId: `paste-${Date.now()}`,
-    importOpId,
-    totalReviewed: reviewPacket.totalReviewed,
-    reviewPacketText: reviewPacketText || undefined,
-    suspiciousLines: suspiciousPayload,
-    requiredItemIds: sentItemIds,
-    forcedItemIds,
-  };
-
-  // تسجيل بداية مراجعة الوكيل (telemetry)
-  pipelineTelemetry.recordAgentReviewStart(importOpId, {
-    itemsSent: suspiciousPayload.length,
-    forcedItems: forcedItemIds.length,
-  });
-
-  const fallbackToLocalClassification = (
-    reason: string,
-    details?: Record<string, unknown>
-  ): ClassifiedDraftWithId[] => {
-    emitAgentReviewSummary({
-      status: "fail-open-local",
-      requestId: "",
-      commandsReceived: 0,
-      commandsApplied: 0,
-    });
-    logAgentError(importOpId, reason);
-    pipelineTelemetry.recordAgentReviewError(importOpId, reason);
-    agentReviewLogger.warn("agent-review-fail-open", {
-      importOpId,
-      reason,
-      failOpenEnabled: AGENT_REVIEW_FAIL_OPEN,
-      ...details,
-    });
-    pipelineTelemetry.recordIngestionComplete(importOpId, {
-      source: "paste",
-      trustLevel: "raw_text",
-      itemsProcessed: classified.length,
-      commandsApplied: 0,
-      latencyMs: 0,
-      agentReviewInitiated: true,
-    });
-    return classified;
-  };
-
-  let response: AgentReviewResponsePayload;
-  try {
-    response = await requestAgentReview(requestPayload);
-  } catch (error) {
-    const message =
-      error instanceof Error ? error.message : "Agent review request failed.";
-    emitAgentReviewSummary({
-      status: "request-failed",
-      requestId: "",
-      commandsReceived: 0,
-      commandsApplied: 0,
-    });
-    if (AGENT_REVIEW_FAIL_OPEN) {
-      return fallbackToLocalClassification(message, {
-        stage: "request-failed",
-      });
-    }
-    throw error;
-  }
-  const fallbackMeta = buildAgentReviewMetaFallback(
-    requestPayload,
-    response.commands,
-    classified
-  );
-  const responseMeta = response.meta ?? fallbackMeta;
-  const missingRequiredItemIds = responseMeta.missingItemIds ?? [];
-  const unresolvedForcedItemIdsFromMeta =
-    responseMeta.unresolvedForcedItemIds ?? [];
-
-  // تسجيل اكتمال مراجعة الوكيل (telemetry)
-  pipelineTelemetry.recordAgentReviewComplete(importOpId, {
-    status: response.status,
-    commandsReceived: response.commands.length,
-    latencyMs: response.latencyMs,
-  });
-
-  if (response.status === "error") {
-    emitAgentReviewSummary({
-      status: response.status,
-      requestId: response.requestId,
-      commandsReceived: response.commands.length,
-      commandsApplied: 0,
-    });
-    const requestIdSuffix = response.requestId
-      ? ` | requestId=${response.requestId}`
-      : "";
-    const reason = response.message
-      ? `فشل مراجعة الوكيل: ${response.message}${requestIdSuffix}`
-      : `فشل مراجعة الوكيل: status=${response.status}`;
-    if (AGENT_REVIEW_FAIL_OPEN) {
-      return fallbackToLocalClassification(reason, {
-        stage: "response-error",
-        status: response.status,
-      });
-    }
-    throw new Error(reason);
-  }
-  if (response.status === "partial") {
-    emitAgentReviewSummary({
-      status: response.status,
-      requestId: response.requestId,
-      commandsReceived: response.commands.length,
-      commandsApplied: 0,
-    });
-    const reason = response.message
-      ? `مراجعة الوكيل غير مكتملة: ${response.message}`
-      : `مراجعة الوكيل غير مكتملة (${response.commands.length} أمر من أصل ${sentItemIds.length} عنصر)`;
-    if (AGENT_REVIEW_FAIL_OPEN) {
-      return fallbackToLocalClassification(reason, {
-        stage: "response-partial",
-        status: response.status,
-      });
-    }
-    throw new Error(reason);
-  }
-  if (response.status === "skipped" && sentItemIds.length > 0) {
-    emitAgentReviewSummary({
-      status: response.status,
-      requestId: response.requestId,
-      commandsReceived: response.commands.length,
-      commandsApplied: 0,
-    });
-    const reason = response.message
-      ? `الوكيل لم يراجع العناصر المطلوبة: ${response.message}`
-      : "الوكيل لم يُرجع أوامر رغم إرسال عناصر للمراجعة";
-    if (AGENT_REVIEW_FAIL_OPEN) {
-      return fallbackToLocalClassification(reason, {
-        stage: "response-skipped",
-        status: response.status,
-      });
-    }
-    throw new Error(reason);
-  }
-
-  // ─── تسجيل استجابة الوكيل (telemetry) ───
-  logAgentResponse({
-    requestId: response.requestId,
-    importOpId,
-    latencyMs: response.latencyMs,
-    status: response.status,
-    commandsReceived: response.commands.length,
-  });
-
-  // ─── فحص stale / idempotency عبر command-engine ───
-  const discardReason = checkResponseValidity(response, opState);
-  if (discardReason === "stale_discarded") {
-    emitAgentReviewSummary({
-      status: discardReason,
-      requestId: response.requestId,
-      commandsReceived: response.commands.length,
-      commandsApplied: 0,
-    });
-    pipelineTelemetry.recordStaleDiscard(importOpId);
-    agentReviewLogger.warn("response-stale-discarded", { importOpId });
-    if (AGENT_REVIEW_FAIL_OPEN) {
-      return fallbackToLocalClassification(
-        "Agent review failed strict mode: stale response discarded.",
-        {
-          stage: "stale-discarded",
-        }
-      );
-    }
-    throw new Error(
-      "Agent review failed strict mode: stale response discarded."
-    );
-  }
-  if (discardReason === "idempotent_discarded") {
-    emitAgentReviewSummary({
-      status: discardReason,
-      requestId: response.requestId,
-      commandsReceived: response.commands.length,
-      commandsApplied: 0,
-    });
-    pipelineTelemetry.recordIdempotentDiscard(importOpId, response.requestId);
-    agentReviewLogger.info("response-idempotent-discarded", { importOpId });
-    if (AGENT_REVIEW_FAIL_OPEN) {
-      return fallbackToLocalClassification(
-        "Agent review failed strict mode: idempotent response discarded.",
-        {
-          stage: "idempotent-discarded",
-        }
-      );
-    }
-    throw new Error(
-      "Agent review failed strict mode: idempotent response discarded."
-    );
-  }
-
-  // ─── تطبيع الأوامر وحل التضاربات عبر command-engine ───
-  const { resolved: resolvedCommands, conflictCount } =
-    normalizeAndDedupeCommands(response.commands);
-  if (conflictCount > 0) {
-    agentReviewLogger.warn("commands-conflict-resolved", {
-      importOpId,
-      conflictCount,
-      originalCount: response.commands.length,
-      resolvedCount: resolvedCommands.length,
-    });
-  }
-
-  // ─── التحقق من البصمة وتطبيق الأوامر ───
-  const corrected: ClassifiedDraftWithId[] = [...classified];
-  const appliedCommandItemIds: string[] = [];
-  const effectiveAppliedItemIds: string[] = [];
-  const unchangedCommandItemIds: string[] = [];
-  let skippedFingerprintCount = 0;
-
-  for (const command of resolvedCommands) {
-    appliedCommandItemIds.push(command.itemId);
-
-    const idx = corrected.findIndex((item) => item._itemId === command.itemId);
-    if (idx < 0) {
-      unchangedCommandItemIds.push(command.itemId);
-      continue;
-    }
-
-    // ─── فحص البصمة عبر pipeline/fingerprint ───
-    const snapshot = opState.snapshots.get(command.itemId);
-    if (snapshot) {
-      const currentFp = computeFingerprintSync(
-        elementTypeToLineType(corrected[idx].type),
-        corrected[idx].text
-      );
-      if (currentFp !== snapshot.fingerprint) {
-        agentReviewLogger.warn("command-fingerprint-mismatch", {
-          itemId: command.itemId,
-          expected: snapshot.fingerprint,
-          actual: currentFp,
-        });
-        unchangedCommandItemIds.push(command.itemId);
-        skippedFingerprintCount += 1;
-        continue;
-      }
-    }
-
-    if (command.op === "relabel") {
-      const mapped = lineTypeToElementType(command.newType);
-      if (!mapped || !isElementType(mapped)) {
-        unchangedCommandItemIds.push(command.itemId);
-        continue;
-      }
-
-      const original = corrected[idx];
-      if (!original || original.type === mapped) {
-        unchangedCommandItemIds.push(command.itemId);
-        continue;
-      }
-
-      if (mapped === "scene_header_top_line") {
-        // الـ pipeline ما بيُنتجش top_line — نحوّله لـ scene_header_1
-        corrected[idx] = {
-          ...original,
-          type: "scene_header_1",
-          header1: undefined,
-          header2: undefined,
-          confidence: Math.max(
-            original.confidence,
-            Math.round(command.confidence * 100),
-            85
-          ),
-          classificationMethod: "context",
-        };
-        effectiveAppliedItemIds.push(command.itemId);
-        continue;
-      }
-
-      corrected[idx] = {
-        ...original,
-        type: mapped,
-        header1: undefined,
-        header2: undefined,
-        confidence: Math.max(
-          original.confidence,
-          Math.round(command.confidence * 100),
-          85
-        ),
-        classificationMethod: "context",
-      };
-      effectiveAppliedItemIds.push(command.itemId);
-    } else if (command.op === "split") {
-      const original = corrected[idx];
-      if (!original) {
-        unchangedCommandItemIds.push(command.itemId);
-        continue;
-      }
-
-      const leftText = original.text.slice(0, command.splitAt);
-      const rightText = original.text.slice(command.splitAt);
-      const leftType = lineTypeToElementType(command.leftType);
-      const rightType = lineTypeToElementType(command.rightType);
-
-      if (
-        !leftType ||
-        !rightType ||
-        !isElementType(leftType) ||
-        !isElementType(rightType)
-      ) {
-        unchangedCommandItemIds.push(command.itemId);
-        continue;
-      }
-
-      const newRightId = generateItemId();
-      const leftConfidence = Math.round(command.confidence * 100);
-      const rightConfidence = Math.round(command.confidence * 100);
-
-      corrected.splice(
-        idx,
-        1,
-        {
-          ...original,
-          type: leftType,
-          text: leftText.trim(),
-          confidence: Math.max(original.confidence, leftConfidence, 82),
-          classificationMethod: "context",
-        },
-        {
-          ...original,
-          type: rightType,
-          text: rightText.trim(),
-          confidence: Math.max(original.confidence, rightConfidence, 82),
-          classificationMethod: "context",
-          _itemId: newRightId,
-        } as ClassifiedDraftWithId
-      );
-      effectiveAppliedItemIds.push(command.itemId);
-    }
-  }
-
-  // ─── تسجيل requestId لمنع التكرار ───
-  opState.appliedRequestIds.add(response.requestId);
-
-  const uniqueAppliedCommandItemIds = toNormalizedMetaIds(
-    appliedCommandItemIds
-  );
-  const uniqueEffectiveAppliedItemIds = toNormalizedMetaIds(
-    effectiveAppliedItemIds
-  );
-  const uniqueUnchangedCommandItemIds = toNormalizedMetaIds(
-    unchangedCommandItemIds
-  );
-
-  // A forced item is "resolved" if:
-  // 1. The agent returned a command that was effectively applied (changed the type), OR
-  // 2. The agent returned no command (confirming current type is correct), OR
-  // 3. The agent returned a same-type relabel (explicit confirmation)
-  // Only flag as unresolved if the item wasn't even in the classified list.
-  const unresolvedForcedItemIdsFromEffect = forcedItemIds.filter((itemId) => {
-    // Check if the item exists at all in the classified data
-    const exists = corrected.some((item) => item._itemId === itemId);
-    return !exists;
-  });
-  const unresolvedForcedItemIds = toNormalizedMetaIds([
-    ...unresolvedForcedItemIdsFromMeta,
-    ...unresolvedForcedItemIdsFromEffect,
-  ]);
-
-  if (unresolvedForcedItemIds.length > 0) {
-    emitAgentReviewSummary({
-      status: "unresolved-forced",
-      requestId: response.requestId,
-      commandsReceived: response.commands.length,
-      commandsApplied: uniqueEffectiveAppliedItemIds.length,
-    });
-    agentReviewLogger.error("response-unresolved-forced-lines", {
-      status: response.status,
-      message: response.message,
-      forcedItemIds,
-      unresolvedForcedItemIdsFromMeta,
-      unresolvedForcedItemIdsFromEffect,
-      unresolvedForcedItemIds,
-      appliedCommandItemIds: uniqueAppliedCommandItemIds,
-      effectiveAppliedItemIds: uniqueEffectiveAppliedItemIds,
-      unchangedCommandItemIds: uniqueUnchangedCommandItemIds,
-      missingRequiredItemIds,
-    });
-    if (AGENT_REVIEW_FAIL_OPEN) {
-      return fallbackToLocalClassification(
-        `الوكيل لم يحسم ${unresolvedForcedItemIds.length} عنصر إلزامي | status=${response.status} | message=${response.message}`,
-        {
-          stage: "unresolved-forced",
-          unresolvedForcedCount: unresolvedForcedItemIds.length,
-        }
-      );
-    }
-    throw new Error(
-      `الوكيل لم يحسم ${unresolvedForcedItemIds.length} عنصر إلزامي | status=${response.status} | message=${response.message}`
-    );
-  }
-
-  // ─── تسجيل تطبيق الأوامر (telemetry) ───
-  logCommandApply({
-    importOpId,
-    requestId: response.requestId,
-    commandsNormalized: resolvedCommands.length,
-    commandsApplied: effectiveAppliedItemIds.length,
-    commandsSkipped: unchangedCommandItemIds.length,
-    skippedFingerprintMismatchCount: skippedFingerprintCount,
-    skippedMissingItemCount: 0,
-    skippedInvalidCommandCount: 0,
-    skippedConflictCount: conflictCount,
-    staleDiscard: false,
-    idempotentDiscard: false,
-  });
-
-  agentReviewLogger.telemetry("response-applied", {
-    status: response.status,
-    commands: response.commands.length,
-    resolvedCommands: resolvedCommands.length,
-    conflictCount,
-    apiVersion: response.apiVersion,
-    mode: response.mode,
-    sentItemIds,
-    forcedItemIds,
-    appliedCommandItemIds: uniqueAppliedCommandItemIds,
-    effectiveAppliedItemIds: uniqueEffectiveAppliedItemIds,
-    unchangedCommandItemIds: uniqueUnchangedCommandItemIds,
-    missingRequiredItemIds,
-    unresolvedForcedItemIds,
-    skippedFingerprintCount,
-  });
-  emitAgentReviewSummary({
-    status: response.status,
-    requestId: response.requestId,
-    commandsReceived: response.commands.length,
-    commandsApplied: uniqueEffectiveAppliedItemIds.length,
-  });
-
-  // تسجيل اكتمال عملية الاستيعاب (telemetry)
-  pipelineTelemetry.recordIngestionComplete(importOpId, {
-    source: "paste",
-    trustLevel: "raw_text",
-    itemsProcessed: classified.length,
-    commandsApplied: effectiveAppliedItemIds.length,
-    latencyMs: response.latencyMs,
-    agentReviewInitiated: true,
-  });
-
-  return corrected;
-};
-
-/**
- * تطبيق دالة المراجعة المحلية (إذا وُفّرت).
- * تُستخدم في سياق الخيارات المخصصة للتطبيق.
+ * ØªØ·Ø¨ÙŠÙ‚ Ø¯Ø§Ù„Ø© Ø§Ù„Ù…Ø±Ø§Ø¬Ø¹Ø© Ø§Ù„Ù…Ø­Ù„ÙŠØ© (Ø¥Ø°Ø§ ÙˆÙÙÙ‘Ø±Øª).
+ * ØªÙØ³ØªØ®Ø¯Ù… ÙÙŠ Ø³ÙŠØ§Ù‚ Ø§Ù„Ø®ÙŠØ§Ø±Ø§Øª Ø§Ù„Ù…Ø®ØµØµØ© Ù„Ù„ØªØ·Ø¨ÙŠÙ‚.
  */
 const applyAgentReview = (
   classified: ClassifiedDraftWithId[],
@@ -2390,7 +1090,7 @@ const applyAgentReview = (
 };
 
 /**
- * إنشاء عقدة ProseMirror من عنصر مصنّف.
+ * Ø¥Ù†Ø´Ø§Ø¡ Ø¹Ù‚Ø¯Ø© ProseMirror Ù…Ù† Ø¹Ù†ØµØ± Ù…ØµÙ†Ù‘Ù.
  */
 const createNodeForType = (
   item: ClassifiedDraftWithId,
@@ -2477,7 +1177,7 @@ const createNodeForType = (
 };
 
 /**
- * تحويل عناصر مصنّفة إلى عقد ProseMirror.
+ * ØªØ­ÙˆÙŠÙ„ Ø¹Ù†Ø§ØµØ± Ù…ØµÙ†Ù‘ÙØ© Ø¥Ù„Ù‰ Ø¹Ù‚Ø¯ ProseMirror.
  */
 const classifiedToNodes = (
   classified: readonly ClassifiedDraftWithId[],
@@ -2489,7 +1189,7 @@ const classifiedToNodes = (
     const item = classified[i];
     const next = classified[i + 1];
 
-    // look-ahead: scene_header_1 + scene_header_2 → scene_header_top_line display node
+    // look-ahead: scene_header_1 + scene_header_2 â†’ scene_header_top_line display node
     if (item.type === "scene_header_1" && next?.type === "scene_header_2") {
       const h1Node = schema.nodes["scene_header_1"].create(
         null,
@@ -2506,7 +1206,7 @@ const classifiedToNodes = (
       continue;
     }
 
-    // scene_header_1 alone → wrap in top_line with empty header_2
+    // scene_header_1 alone â†’ wrap in top_line with empty header_2
     if (item.type === "scene_header_1") {
       const h1Node = schema.nodes["scene_header_1"].create(
         null,
@@ -2519,7 +1219,7 @@ const classifiedToNodes = (
       continue;
     }
 
-    // scene_header_2 alone (orphan) → wrap in top_line with empty header_1
+    // scene_header_2 alone (orphan) â†’ wrap in top_line with empty header_1
     if (item.type === "scene_header_2") {
       const h1Node = schema.nodes["scene_header_1"].create();
       const h2Node = schema.nodes["scene_header_2"].create(
@@ -2540,7 +1240,7 @@ const classifiedToNodes = (
 };
 
 /**
- * تصنيف النص محلياً فقط (بدون مراجعة الوكيل).
+ * ØªØµÙ†ÙŠÙ Ø§Ù„Ù†Øµ Ù…Ø­Ù„ÙŠØ§Ù‹ ÙÙ‚Ø· (Ø¨Ø¯ÙˆÙ† Ù…Ø±Ø§Ø¬Ø¹Ø© Ø§Ù„ÙˆÙƒÙŠÙ„).
  */
 export const classifyText = (
   text: string,
@@ -2554,43 +1254,27 @@ export const classifyText = (
 };
 
 /**
- * تصنيف النص ثم مراجعة الوكيل عن بُعد.
- * هذا المسار صارم: لا fallback محلي — إذا فشل الباك اند يُرفض التصنيف.
- */
-export const classifyTextWithAgentReview = async (
-  text: string,
-  agentReview?: (
-    classified: readonly ClassifiedDraftWithId[]
-  ) => ClassifiedDraftWithId[]
-): Promise<ClassifiedDraftWithId[]> => {
-  const initiallyClassified = classifyLines(text);
-  const remotelyReviewed = await applyRemoteAgentReviewV2(initiallyClassified);
-  return applyAgentReview(remotelyReviewed, agentReview);
-};
-
-/**
- * تطبيق تصنيف اللصق على العرض بنمط Render-First.
+ * ØªØ·Ø¨ÙŠÙ‚ ØªØµÙ†ÙŠÙ Ø§Ù„Ù„ØµÙ‚ Ø¹Ù„Ù‰ Ø§Ù„Ø¹Ø±Ø¶ Ø¨Ù†Ù…Ø· Render-First.
  *
- * 1) تصنيف محلي → عرض فوري
- * 2) Gemini Flash — تعزيز السياق (streaming)
- * 3) Kimi 2.5 — حل الشبهة (streaming)
- * 4) Claude Agent Review — مراجعة نهائية
+ * 1) ØªØµÙ†ÙŠÙ Ù…Ø­Ù„ÙŠ + ØªØ·Ø¨ÙŠÙ‚ Ø¥ØµÙ„Ø§Ø­Ø§Øª Ø§Ù„Ø§Ø´ØªØ¨Ø§Ù‡ Ù‚Ø¨Ù„ Ø§Ù„Ø¹Ø±Ø¶
+ * 2) Ø¹Ø±Ø¶ ÙÙˆØ±ÙŠ
+ * 3) Ù…Ø±Ø§Ø¬Ø¹Ø© Ù†Ù‡Ø§Ø¦ÙŠØ© ÙÙŠ Ø§Ù„Ø®Ù„ÙÙŠØ©
  *
- * المستخدم يشوف المحتوى فوراً (الخطوة 1)،
- * ثم التحسينات بتتطبق تدريجياً في الـ background.
+ * Ø§Ù„Ù…Ø³ØªØ®Ø¯Ù… ÙŠØ´ÙˆÙ Ø§Ù„Ù…Ø­ØªÙˆÙ‰ ÙÙˆØ±Ø§Ù‹ (Ø§Ù„Ø®Ø·ÙˆØ© 1)ØŒ
+ * Ø«Ù… ØªØ·Ø¨Ù‚ Ø·Ø¨Ù‚Ø© Ø§Ù„Ù…Ø±Ø§Ø¬Ø¹Ø© Ø§Ù„Ù†Ù‡Ø§Ø¦ÙŠØ© ØªØµØ­ÙŠØ­Ø§ØªÙ‡Ø§ ØªØ¯Ø±ÙŠØ¬ÙŠØ§Ù‹.
  */
 export const applyPasteClassifierFlowToView = async (
   view: EditorView,
   text: string,
   options?: ApplyPasteClassifierFlowOptions
 ): Promise<boolean> => {
-  // ── Re-entry guard ──
+  // â”€â”€ Re-entry guard â”€â”€
   if (pipelineRunning) {
     agentReviewLogger.warn("pipeline-reentry-blocked", {});
     return false;
   }
 
-  // ── Text dedup ──
+  // â”€â”€ Text dedup â”€â”€
   const textHash = simpleHash(text);
   if (
     textHash === lastProcessedHash &&
@@ -2609,60 +1293,91 @@ export const applyPasteClassifierFlowToView = async (
     const structuredHints = options?.structuredHints;
     let schemaElements = options?.schemaElements;
 
-    // ── Phase -1: جلب schema elements من المحرك عند اللصق ──
+    // â”€â”€ Phase -1: Ø¬Ù„Ø¨ schema elements Ù…Ù† Ø§Ù„Ù…Ø­Ø±Ùƒ Ø¹Ù†Ø¯ Ø§Ù„Ù„ØµÙ‚ â”€â”€
     const bridgeStart = performance.now();
-    if (
-      !schemaElements &&
-      classificationProfile === "paste" &&
-      TEXT_EXTRACT_ENDPOINT
-    ) {
+    if (classificationProfile === "paste" && TEXT_EXTRACT_ENDPOINT) {
       const engineController = new AbortController();
+      // T010: show loading spinner
+      if (typeof window !== "undefined") {
+        window.dispatchEvent(
+          new CustomEvent("paste-classifier:loading", {
+            detail: { loading: true },
+          })
+        );
+      }
       try {
         const response = await fetchWithTimeout(
           TEXT_EXTRACT_ENDPOINT,
           {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ text }),
+            body: JSON.stringify({ content: text, sourceType: "paste" }),
           },
           engineController,
-          10_000
+          30_000
         );
-        if (response.ok) {
-          const body = (await response.json()) as {
-            success?: boolean;
-            data?: { schemaElements?: readonly SchemaElementInput[] };
-          };
-          if (
-            body?.success &&
-            Array.isArray(body.data?.schemaElements) &&
-            body.data.schemaElements.length > 0
-          ) {
-            schemaElements = body.data.schemaElements;
-            agentReviewLogger.telemetry("paste-pipeline-stage", {
-              stage: "engine-text-extract-success",
-              elementCount: schemaElements.length,
-            });
-            pipelineRecorder.logBridgeCall(
-              "paste",
-              schemaElements.length,
-              Math.round(performance.now() - bridgeStart)
-            );
-          }
+        if (!response.ok) {
+          throw new Error(
+            `Server returned ${String(response.status)}: ${response.statusText}`
+          );
         }
-      } catch (engineError) {
-        agentReviewLogger.warn("engine-text-extract-failed", {
-          error:
-            engineError instanceof Error
-              ? engineError.message
-              : String(engineError),
+        const body = (await response.json()) as {
+          rawText?: string;
+          elements?: readonly {
+            normalizedText: string;
+            suggestedType?: string;
+          }[];
+          extractionMeta?: Record<string, unknown>;
+        };
+        if (!Array.isArray(body.elements) || body.elements.length === 0) {
+          throw new Error("Server returned empty elements array");
+        }
+        schemaElements = body.elements.map(
+          (el): SchemaElementInput => ({
+            element: el.suggestedType ?? "",
+            value: el.normalizedText,
+          })
+        );
+        agentReviewLogger.telemetry("paste-pipeline-stage", {
+          stage: "engine-text-extract-success",
+          elementCount: schemaElements.length,
         });
-        // fallback: يكمل بالتصنيف المحلي العادي
+        pipelineRecorder.logBridgeCall(
+          "paste",
+          schemaElements.length,
+          Math.round(performance.now() - bridgeStart)
+        );
+      } catch (engineError) {
+        // T011 (FR-013): server failure → cancel paste entirely
+        const errorMessage =
+          engineError instanceof Error
+            ? engineError.message
+            : String(engineError);
+        agentReviewLogger.error("engine-text-extract-failed", {
+          error: errorMessage,
+        });
+        if (typeof window !== "undefined") {
+          window.dispatchEvent(
+            new CustomEvent(PASTE_CLASSIFIER_ERROR_EVENT, {
+              detail: { message: errorMessage },
+            })
+          );
+        }
+        return false;
+      } finally {
+        // T010: hide loading spinner
+        if (typeof window !== "undefined") {
+          window.dispatchEvent(
+            new CustomEvent("paste-classifier:loading", {
+              detail: { loading: false },
+            })
+          );
+        }
       }
     }
 
-    // ── Phase 0: التصنيف المحلي ──
-    // رصد البريدج لو الـ schemaElements جاية من file import (البريدج اتعمل في الباك إند)
+    // â”€â”€ Phase 0: Ø§Ù„ØªØµÙ†ÙŠÙ Ø§Ù„Ù…Ø­Ù„ÙŠ â”€â”€
+    // Ø±ØµØ¯ Ø§Ù„Ø¨Ø±ÙŠØ¯Ø¬ Ù„Ùˆ Ø§Ù„Ù€ schemaElements Ø¬Ø§ÙŠØ© Ù…Ù† file import (Ø§Ù„Ø¨Ø±ÙŠØ¯Ø¬ Ø§ØªØ¹Ù…Ù„ ÙÙŠ Ø§Ù„Ø¨Ø§Ùƒ Ø¥Ù†Ø¯)
     if (
       schemaElements &&
       schemaElements.length > 0 &&
@@ -2692,7 +1407,7 @@ export const applyPasteClassifierFlowToView = async (
       sourceMethod,
     });
 
-    // ── Phase 0.5: عرض فوري (Render-First) ──
+    // â”€â”€ Phase 0.5: Ø¹Ø±Ø¶ ÙÙˆØ±ÙŠ (Render-First) â”€â”€
     const nodes = classifiedToNodes(locallyReviewed, view.state.schema);
     if (nodes.length === 0) return false;
 
@@ -2709,13 +1424,13 @@ export const applyPasteClassifierFlowToView = async (
       nodesApplied: nodes.length,
     });
 
-    // ── Recorder: snapshot بعد العرض الفوري ──
+    // â”€â”€ Recorder: snapshot Ø¨Ø¹Ø¯ Ø§Ù„Ø¹Ø±Ø¶ Ø§Ù„ÙÙˆØ±ÙŠ â”€â”€
     pipelineRecorder.trackFile("paste-classifier.ts");
     pipelineRecorder.snapshot("render-first", locallyReviewed, {
       nodesRendered: nodes.length,
     });
 
-    // ── رسالة مؤقتة على الشاشة (TODO: شيلها بعد التجربة) ──
+    // â”€â”€ Ø±Ø³Ø§Ù„Ø© Ù…Ø¤Ù‚ØªØ© Ø¹Ù„Ù‰ Ø§Ù„Ø´Ø§Ø´Ø© (TODO: Ø´ÙŠÙ„Ù‡Ø§ Ø¨Ø¹Ø¯ Ø§Ù„ØªØ¬Ø±Ø¨Ø©) â”€â”€
     if (typeof window !== "undefined") {
       const enabledFlags = Object.entries(PIPELINE_FLAGS)
         .filter(([, v]) => v)
@@ -2723,9 +1438,9 @@ export const applyPasteClassifierFlowToView = async (
       const flagsText =
         enabledFlags.length > 0
           ? enabledFlags.join(", ")
-          : "الكل OFF (baseline)";
+          : "Ø§Ù„ÙƒÙ„ OFF (baseline)";
       const banner = document.createElement("div");
-      banner.textContent = `✅ Pipeline تم — ${nodes.length} سطر | الطبقات: ${flagsText}`;
+      banner.textContent = `âœ… Pipeline ØªÙ… â€” ${nodes.length} Ø³Ø·Ø± | Ø§Ù„Ø·Ø¨Ù‚Ø§Øª: ${flagsText}`;
       Object.assign(banner.style, {
         position: "fixed",
         top: "12px",
@@ -2746,14 +1461,26 @@ export const applyPasteClassifierFlowToView = async (
       setTimeout(() => banner.remove(), 5000);
     }
 
-    // ── Phase 1–4: AI layers + Claude في الـ background ──
-    // لا ننتظرها — بتشتغل async وبتحدّث المحرر تدريجياً
-    void runAIEnhancementPipeline(view, locallyReviewed).catch((error) => {
-      const message = error instanceof Error ? error.message : String(error);
-      agentReviewLogger.error("ai-enhancement-pipeline-error", {
-        error: message,
-      });
-    });
+    // â”€â”€ Phase 1: final review ÙÙŠ Ø§Ù„Ø®Ù„ÙÙŠØ© â”€â”€
+    // Ù„Ø§ Ù†Ù†ØªØ¸Ø±Ù‡Ø§ â€” Ø¨ØªØ´ØªØºÙ„ async ÙˆØ¨ØªØ­Ø¯Ù‘Ø« Ø§Ù„Ù…Ø­Ø±Ø± ØªØ¯Ø±ÙŠØ¬ÙŠØ§Ù‹
+    // T013: generate importOpId early and pass to background review
+    const importOpId = generateItemId();
+    void runFinalReviewPipeline(view, locallyReviewed, importOpId).catch(
+      (error) => {
+        const message = error instanceof Error ? error.message : String(error);
+        agentReviewLogger.error("final-review-pipeline-error", {
+          error: message,
+        });
+        // T014 (FR-015): toast notification on background failure
+        if (typeof window !== "undefined") {
+          window.dispatchEvent(
+            new CustomEvent("paste-classifier:background-error", {
+              detail: { message, importOpId },
+            })
+          );
+        }
+      }
+    );
 
     lastProcessedHash = textHash;
     lastProcessedAt = performance.now();
@@ -2764,147 +1491,113 @@ export const applyPasteClassifierFlowToView = async (
 };
 
 /**
- * AI Enhancement Pipeline — يشتغل في الـ background بعد العرض الفوري.
- *
- * 1) Gemini Flash — تعزيز السياق
- * 2) Claude Agent Review — مراجعة نهائية
- *
- * كل طبقة بتطبق تصحيحاتها تدريجياً عبر ProgressiveUpdateSession.
+ * ØªØ·Ø¨ÙŠÙ‚ Ø·Ø¨Ù‚Ø© Ø§Ù„Ù…Ø±Ø§Ø¬Ø¹Ø© Ø§Ù„Ù†Ù‡Ø§Ø¦ÙŠØ© Ø¨Ø¹Ø¯ Ø§Ù„Ø¹Ø±Ø¶ Ø§Ù„ÙÙˆØ±ÙŠ.
  */
-const runAIEnhancementPipeline = async (
+const runFinalReviewPipeline = async (
   view: EditorView,
-  locallyReviewed: ClassifiedDraftWithId[]
+  locallyReviewed: ClassifiedDraftWithId[],
+  importOpId: string
 ): Promise<void> => {
   if (view.isDestroyed) return;
 
-  const sessionId = `ai-enhance-${Date.now()}`;
-  const abortController = new AbortController();
-
-  // إنشاء جلسة تحديث تدريجي
+  const sessionId = `final-review-${Date.now()}`;
   const updateSession = progressiveUpdater.createSession(sessionId, {
     minConfidenceThreshold: 0.65,
     allowLayerOverride: true,
-    layerPriority: ["claude-review", "gemini-context"],
+    layerPriority: ["final-review", "gemini-context"],
   });
-
-  // تحويل التصنيفات لصيغة ClassifiedLine للطبقات
-  const classifiedLineRecords = toClassifiedLineRecords(locallyReviewed);
+  const suspicionCases =
+    (locallyReviewed as ClassifiedDraftPipelineState)._suspicionCases ?? [];
 
   try {
-    // ── Phase 1: Gemini Flash — تعزيز السياق (streaming) ──
-    if (PIPELINE_FLAGS.GEMINI_CONTEXT_ENABLED) {
+    if (!PIPELINE_FLAGS.FINAL_REVIEW_ENABLED) {
       agentReviewLogger.telemetry("paste-pipeline-stage", {
-        stage: "gemini-context-start",
-        totalLines: classifiedLineRecords.length,
+        stage: "final-review-skipped",
+        reason: "FINAL_REVIEW_ENABLED=false",
       });
-
-      const contextResult = await requestContextEnhancement({
-        sessionId,
-        classifiedLines: classifiedLineRecords,
-        updateSession,
-        view,
-        signal: abortController.signal,
-      });
-
-      agentReviewLogger.telemetry("paste-pipeline-stage", {
-        stage: "gemini-context-complete",
-        totalCorrections: contextResult.totalCorrections,
-        appliedCorrections: contextResult.appliedCorrections,
-        latencyMs: contextResult.latencyMs,
-        success: contextResult.success,
-      });
-
-      // ── Recorder: snapshot بعد Gemini context ──
-      pipelineRecorder.trackFile("paste-classifier.ts");
-      pipelineRecorder.snapshot("gemini-context", locallyReviewed, {
-        totalCorrections: contextResult.totalCorrections,
-        appliedCorrections: contextResult.appliedCorrections,
-        latencyMs: contextResult.latencyMs,
-      });
-    } else {
-      agentReviewLogger.telemetry("paste-pipeline-stage", {
-        stage: "gemini-context-skipped",
-        reason: "GEMINI_CONTEXT_ENABLED=false",
-      });
+      return;
     }
 
-    if (view.isDestroyed) return;
-
-    if (view.isDestroyed) return;
-
-    // ── Phase 2: Claude Agent Review — مراجعة نهائية ──
-    if (PIPELINE_FLAGS.CLAUDE_REVIEW_ENABLED) {
+    if (suspicionCases.length === 0) {
       agentReviewLogger.telemetry("paste-pipeline-stage", {
-        stage: "claude-review-start",
+        stage: "final-review-skipped",
+        reason: "no-suspicion-cases",
       });
-
-      const backendReviewed = await applyRemoteAgentReviewV2(locallyReviewed);
-
-      if (backendReviewed.length > 0 && !view.isDestroyed) {
-        // تطبيق تصحيحات Claude كـ progressive updates
-        let claudeApplied = 0;
-        for (let i = 0; i < backendReviewed.length; i += 1) {
-          const original = locallyReviewed[i];
-          const corrected = backendReviewed[i];
-          if (!original || !corrected) continue;
-          if (original.type === corrected.type) continue;
-
-          const applied = updateSession.applyCorrection(view, {
-            lineIndex: i,
-            correctedType: corrected.type,
-            confidence: corrected.confidence / 100,
-            reason: "Claude agent review",
-            source: "claude-review",
-          });
-          if (applied) claudeApplied += 1;
-        }
-
-        agentReviewLogger.telemetry("paste-pipeline-stage", {
-          stage: "claude-review-complete",
-          totalLines: backendReviewed.length,
-          claudeApplied,
-        });
-      }
-      // ── Recorder: snapshot بعد Claude review ──
-      pipelineRecorder.trackFile("paste-classifier.ts");
-      pipelineRecorder.snapshot("claude-review", locallyReviewed);
-    } else {
-      agentReviewLogger.telemetry("paste-pipeline-stage", {
-        stage: "claude-review-skipped",
-        reason: "CLAUDE_REVIEW_ENABLED=false",
-      });
+      return;
     }
 
-    // إنهاء الجلسة بنجاح
-    updateSession.complete();
-
-    const stats = updateSession.getStats();
     agentReviewLogger.telemetry("paste-pipeline-stage", {
-      stage: "ai-enhancement-pipeline-complete",
-      totalReceived: stats.totalReceived,
-      totalApplied: stats.totalApplied,
-      totalSkipped: stats.totalSkipped,
-      totalConflicted: stats.totalConflicted,
+      stage: "final-review-start",
+      suspicionCount: suspicionCases.length,
     });
 
-    // ── Recorder: إنهاء الـ run ──
-    pipelineRecorder.finishRun();
+    const { classified: finalReviewed, stats: routingStats } =
+      await applyFinalReviewLayer(
+        locallyReviewed,
+        suspicionCases,
+        importOpId,
+        sessionId
+      );
+
+    let appliedCount = 0;
+    const comparableLength = Math.min(
+      locallyReviewed.length,
+      finalReviewed.length
+    );
+    for (let i = 0; i < comparableLength; i += 1) {
+      const original = locallyReviewed[i];
+      const corrected = finalReviewed[i];
+      if (!original || !corrected) continue;
+      if (original.type === corrected.type) continue;
+
+      const applied = updateSession.applyCorrection(view, {
+        lineIndex: i,
+        correctedType: corrected.type,
+        confidence: Math.max(0.65, corrected.confidence),
+        reason: "Final review correction",
+        source: "final-review",
+      });
+      if (applied) {
+        appliedCount += 1;
+      }
+    }
+
+    pipelineRecorder.trackFile("paste-classifier.ts");
+    pipelineRecorder.snapshot("final-review", finalReviewed, {
+      appliedCount,
+      suspicionCount: suspicionCases.length,
+      ...routingStats,
+    });
+
+    agentReviewLogger.telemetry("paste-pipeline-stage", {
+      stage: "final-review-complete",
+      appliedCount,
+      suspicionCount: suspicionCases.length,
+      countPass: routingStats.countPass,
+      countLocalReview: routingStats.countLocalReview,
+      countAgentCandidate: routingStats.countAgentCandidate,
+      countAgentForced: routingStats.countAgentForced,
+    });
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    agentReviewLogger.error("ai-enhancement-pipeline-failed", {
+    agentReviewLogger.error("final-review-pipeline-failed", {
       sessionId,
       error: message,
     });
-
-    // fail-open: التصنيف المحلي موجود أصلاً في المحرر
-    // الـ AI layers فشلت بس المستخدم مش هيتأثر
+    // T014 (FR-015): silent toast on background review failure
+    if (typeof window !== "undefined") {
+      window.dispatchEvent(
+        new CustomEvent("paste-classifier:background-error", {
+          detail: { message, importOpId },
+        })
+      );
+    }
+  } finally {
     updateSession.complete();
+    pipelineRecorder.finishRun();
   }
 };
 
-/**
- * مصنّف اللصق التلقائي داخل Tiptap.
- */
 export const PasteClassifier = Extension.create<PasteClassifierOptions>({
   name: "pasteClassifier",
 

@@ -68,13 +68,13 @@ Routing bands: `pass` → `local-review` → `agent-candidate` → `agent-forced
 
 ### Frontend → Backend Endpoints
 
-| Endpoint                       | Purpose                                         | AI Provider                                              |
-| ------------------------------ | ----------------------------------------------- | -------------------------------------------------------- |
-| `POST /api/file-extract`       | Extract text from PDF/DOC/DOCX/TXT/Fountain/FDX | Mistral (OCR)                                            |
-| `POST /api/agent/review`       | Classify suspicious lines                       | Configured review provider via `AGENT_REVIEW_MODEL`      |
-| `POST /api/final-review`       | Secondary review (Command API v2)               | Configured review provider via `FINAL_REVIEW_MODEL`      |
-| `POST /api/ai/context-enhance` | Context-aware correction (SSE)                  | Google Gemini                                            |
-| `POST /api/export/pdfa`        | HTML → PDF via Puppeteer                        | —                                                        |
+| Endpoint                       | Purpose                                         | AI Provider                                         |
+| ------------------------------ | ----------------------------------------------- | --------------------------------------------------- |
+| `POST /api/file-extract`       | Extract text from PDF/DOC/DOCX/TXT/Fountain/FDX | Mistral (OCR)                                       |
+| `POST /api/agent/review`       | Classify suspicious lines                       | Configured review provider via `AGENT_REVIEW_MODEL` |
+| `POST /api/final-review`       | Secondary review (Command API v2)               | Configured review provider via `FINAL_REVIEW_MODEL` |
+| `POST /api/ai/context-enhance` | Context-aware correction (SSE)                  | Google Gemini                                       |
+| `POST /api/export/pdfa`        | HTML → PDF via Puppeteer                        | —                                                   |
 
 ### Key Source Directories
 

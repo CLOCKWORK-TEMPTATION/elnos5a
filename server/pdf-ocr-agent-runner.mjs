@@ -16,7 +16,7 @@ import {
 import { runVisionProofread } from "./pdf-vision-proofread.mjs";
 import { enforceTokenMatch } from "./token-enforcement.mjs";
 import { writeMismatchReport } from "./mismatch-reporter.mjs";
-import { saveProofreadscene_header_3ocx } from "./proofread-docx-writer.mjs";
+import { saveProofreadDocx } from "./proofread-docx-writer.mjs"; // Fixed corrupted import name
 
 const execFileAsync = promisify(execFile);
 const __filename = fileURLToPath(import.meta.url);
@@ -773,7 +773,7 @@ export const runPdfOcrAgent = async ({ buffer, filename }) => {
     // يُولّد نسختين: خام (raw) + مُنسّق (formatted)
     // الملفات تُحفظ في server/proofread-output/
     try {
-      const docxResult = await saveProofreadscene_header_3ocx(
+      const docxResult = await saveProofreadDocx( // Fixed corrupted function call
         finalText,
         filename
       );

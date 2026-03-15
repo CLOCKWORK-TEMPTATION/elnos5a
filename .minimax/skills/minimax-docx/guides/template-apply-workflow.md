@@ -16,9 +16,9 @@ Use this guide when the user provides a `.docx` or `.doc` file as template/refer
 
 Check magic bytes, not file extension:
 
-| Container | Magic Bytes | Action |
-|-----------|-------------|--------|
-| OOXML (.docx) | `50 4B 03 04` | Use directly |
+| Container         | Magic Bytes               | Action        |
+| ----------------- | ------------------------- | ------------- |
+| OOXML (.docx)     | `50 4B 03 04`             | Use directly  |
 | OLE Binary (.doc) | `D0 CF 11 E0 A1 B1 1A E1` | Convert first |
 
 ```bash
@@ -34,6 +34,7 @@ soffice --headless --convert-to docx --outdir <tmp-dir> <input.doc>
 **Do NOT use `textutil`** — it loses structural fidelity.
 
 After conversion:
+
 1. Use the converted `.docx` as template source
 2. Run `audit` before any edits
 3. Keep original `.doc` read-only
@@ -44,12 +45,12 @@ After conversion:
 
 Before editing, derive constraints from the template:
 
-| Constraint Type | What to Capture |
-|-----------------|-----------------|
-| `topology` | Section count, break positions, anchor regions |
-| `frozen` | Signature blocks, legal clauses, no-edit zones |
-| `derived` | TOC presence, cross-references, numbering schemes |
-| `style` | Style IDs, key formatting (fonts, colors, spacing) |
+| Constraint Type | What to Capture                                    |
+| --------------- | -------------------------------------------------- |
+| `topology`      | Section count, break positions, anchor regions     |
+| `frozen`        | Signature blocks, legal clauses, no-edit zones     |
+| `derived`       | TOC presence, cross-references, numbering schemes  |
+| `style`         | Style IDs, key formatting (fonts, colors, spacing) |
 
 These constraints become runtime gates — edits are allowed freely, but delivery is blocked if any gate fails.
 
@@ -59,12 +60,12 @@ These constraints become runtime gates — edits are allowed freely, but deliver
 
 Build a **Replacement Matrix** before any text edits:
 
-| template_snippet | field_name | action | target_value | value_source |
-|------------------|------------|--------|--------------|--------------|
-| `Acme Co., Ltd.` | company_name | REPLACE | `Nova Tech` | user input |
-| `[Date]` | contract_date | REPLACE | `2026-02-16` | user input |
-| `This is a sample.` | demo_notice | DROP | | template cleanup |
-| `Authorized Signature` | signature_caption | KEEP | | structure rule |
+| template_snippet       | field_name        | action  | target_value | value_source     |
+| ---------------------- | ----------------- | ------- | ------------ | ---------------- |
+| `Acme Co., Ltd.`       | company_name      | REPLACE | `Nova Tech`  | user input       |
+| `[Date]`               | contract_date     | REPLACE | `2026-02-16` | user input       |
+| `This is a sample.`    | demo_notice       | DROP    |              | template cleanup |
+| `Authorized Signature` | signature_caption | KEEP    |              | structure rule   |
 
 ### Classification Rules (in order)
 
@@ -77,6 +78,7 @@ Build a **Replacement Matrix** before any text edits:
 ### Anti-Concatenation Rule
 
 When replacing a field:
+
 - Remove old value completely
 - Never output `OldValue/NewValue` mixed strings
 - Never append new paragraphs when task is "fill template"
@@ -87,9 +89,9 @@ When replacing a field:
 
 Identify TOC implementation before edits:
 
-| Type | Detection | Action |
-|------|-----------|--------|
-| Field-based | `TOC` field code in document | Keep field, refresh on open |
+| Type              | Detection                        | Action                                              |
+| ----------------- | -------------------------------- | --------------------------------------------------- |
+| Field-based       | `TOC` field code in document     | Keep field, refresh on open                         |
 | Static paragraphs | `TOC1/TOC2/...` style paragraphs | Delete stale entries, rebuild from current headings |
 
 Static TOC entries become stale after heading changes — they must be rebuilt, not preserved.
@@ -107,6 +109,7 @@ python3 <skill-path>/docx_engine.py map-template mapping.json --require R1,R2
 ### 5.2 Fill Mapping Rows
 
 Complete these fields for each row:
+
 - `selector`: XPath or identifier
 - `action`: `replace` | `delete` | `insert`
 - `target_value`: New content (required for replace/insert)
@@ -137,12 +140,14 @@ python3 <skill-path>/docx_engine.py map-apply <input.docx> <mapping.json> <outpu
 Run this sequence for every template task:
 
 ### Phase 1: Setup
+
 - [ ] Confirm input path exists, output path is explicit
 - [ ] Detect container by magic bytes
 - [ ] Convert legacy `.doc` if needed
 - [ ] Audit normalized template: `docx_engine.py audit <template.docx>`
 
 ### Phase 2: Analysis
+
 - [ ] Freeze requested scope (list only allowed edits)
 - [ ] Define preserved structure (sections, signatures, anchors)
 - [ ] Generate dynamic constraint sheet
@@ -150,24 +155,28 @@ Run this sequence for every template task:
 - [ ] Build replacement matrix
 
 ### Phase 3: Mapping
+
 - [ ] Generate mapping scaffold: `map-template`
 - [ ] Fill all required rows with selectors, actions, values
 - [ ] Run completeness gate: `map-gate`
 - [ ] Route: gate pass → fill/patch; gate fail → complete mapping or rebuild
 
 ### Phase 4: Build
+
 - [ ] Run environment check: `docx_engine.py doctor`
 - [ ] Execute build:
   - Fill/Patch: `map-apply`
   - Rebuild: `dotnet run -- from-template <template.docx> <output.docx>`
 
 ### Phase 5: Validation
+
 - [ ] Audit output: `docx_engine.py audit <output.docx>`
 - [ ] Preview content: `docx_engine.py preview <output.docx>`
 - [ ] Check preservation: No unrequested cover/TOC/chapter additions
 - [ ] Check residuals: `docx_engine.py residual <output.docx>`
 
 ### Phase 6: Fix if needed
+
 - [ ] On any gate failure: patch logic, rerun build and validation
 
 ---
@@ -218,9 +227,9 @@ python3 <skill-path>/docx_engine.py residual <output.docx>
 
 ## 9. Related Guides
 
-| Guide | When to Read |
-|-------|--------------|
-| `doc-input-normalization.md` | Detailed .doc conversion protocol |
-| `template-apply-dynamic-gates.md` | Deep dive on constraint derivation |
+| Guide                                | When to Read                         |
+| ------------------------------------ | ------------------------------------ |
+| `doc-input-normalization.md`         | Detailed .doc conversion protocol    |
+| `template-apply-dynamic-gates.md`    | Deep dive on constraint derivation   |
 | `template-driven-content-rewrite.md` | Detailed replacement matrix protocol |
-| `development.md` | C# coding patterns for rebuild path |
+| `development.md`                     | C# coding patterns for rebuild path  |

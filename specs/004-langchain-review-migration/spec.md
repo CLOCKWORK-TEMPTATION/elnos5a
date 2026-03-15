@@ -5,7 +5,7 @@
 **Status**: Clarified
 **Input**: User description: "تحويل وكيل المراجعة من Anthropic SDK إلى LangChain SDK مع دعم التبديل بين عدة مزودين (Anthropic, OpenAI, Google Gemini, DeepSeek)"
 
-## User Scenarios & Testing *(mandatory)*
+## User Scenarios & Testing _(mandatory)_
 
 ### User Story 1 - تبديل مزود AI للمراجعة عبر متغير بيئة (Priority: P1)
 
@@ -108,7 +108,7 @@
 - Q: متى يتفعل الـ fallback — على كل الأخطاء أم المؤقتة فقط؟ → A: الأخطاء المؤقتة فقط (overload, rate-limit, timeout, 5xx). الأخطاء الدائمة (401, 403, 404) تفشل فوراً برسالة واضحة.
 - Q: ما مستوى الـ observability لكل طلب مراجعة؟ → A: لوج لكل طلب: المزود المستخدم + حالة الـ fallback + زمن الاستجابة (عبر pino الموجود).
 
-## Requirements *(mandatory)*
+## Requirements _(mandatory)_
 
 ### Functional Requirements
 
@@ -172,18 +172,18 @@
 
 كل طلب مراجعة ينتج سطر لوج واحد عند الاكتمال (نجاح أو فشل). يجب أن يحتوي على الحقول التالية:
 
-| Field Name | Type | Unit / Values | Description |
-|-----------|------|---------------|-------------|
-| `requestId` | `string` | UUID v4 | معرف الطلب الفريد |
-| `channel` | `"agent-review" \| "final-review"` | enum | القناة التي نفّذت الطلب |
-| `provider` | `"anthropic" \| "openai" \| "google-genai" \| "deepseek"` | enum | المزود الذي أجاب فعلياً |
-| `model` | `string` | model identifier | النموذج الذي أجاب فعلياً |
-| `usedFallback` | `boolean` | — | هل تم التحويل للمزود البديل |
-| `latencyMs` | `number` | milliseconds (integer ≥ 0) | زمن الاستجابة الكلي |
-| `status` | `"applied" \| "partial" \| "skipped" \| "error"` | enum | حالة نتيجة المراجعة |
-| `errorClass` | `"temporary" \| "permanent" \| null` | enum or null | تصنيف الخطأ إن وُجد |
+| Field Name     | Type                                                      | Unit / Values              | Description                 |
+| -------------- | --------------------------------------------------------- | -------------------------- | --------------------------- |
+| `requestId`    | `string`                                                  | UUID v4                    | معرف الطلب الفريد           |
+| `channel`      | `"agent-review" \| "final-review"`                        | enum                       | القناة التي نفّذت الطلب     |
+| `provider`     | `"anthropic" \| "openai" \| "google-genai" \| "deepseek"` | enum                       | المزود الذي أجاب فعلياً     |
+| `model`        | `string`                                                  | model identifier           | النموذج الذي أجاب فعلياً    |
+| `usedFallback` | `boolean`                                                 | —                          | هل تم التحويل للمزود البديل |
+| `latencyMs`    | `number`                                                  | milliseconds (integer ≥ 0) | زمن الاستجابة الكلي         |
+| `status`       | `"applied" \| "partial" \| "skipped" \| "error"`          | enum                       | حالة نتيجة المراجعة         |
+| `errorClass`   | `"temporary" \| "permanent" \| null`                      | enum or null               | تصنيف الخطأ إن وُجد         |
 
-## Success Criteria *(mandatory)*
+## Success Criteria _(mandatory)_
 
 ### Measurable Outcomes
 
@@ -211,12 +211,12 @@
 
 الحزم التالية مطلوبة بالحد الأدنى المحدد، ويجب تثبيت الإصدار الدقيق (exact pinning) في `package.json` — لا يُقبل استخدام `^` أو `~` لضمان استقرار السلوك عبر البيئات:
 
-| Package | Minimum Version | Pinning Strategy |
-|---------|----------------|-----------------|
-| `@langchain/core` | `1.1.31` | exact |
-| `@langchain/anthropic` | `1.3.22` | exact |
-| `@langchain/openai` | `1.2.12` | exact |
-| `@langchain/google-genai` | `2.1.24` | exact |
+| Package                   | Minimum Version | Pinning Strategy |
+| ------------------------- | --------------- | ---------------- |
+| `@langchain/core`         | `1.1.31`        | exact            |
+| `@langchain/anthropic`    | `1.3.22`        | exact            |
+| `@langchain/openai`       | `1.2.12`        | exact            |
+| `@langchain/google-genai` | `2.1.24`        | exact            |
 
 - **DEP-001**: النظام يجب أن يعتمد على حزم LangChain بإصدارات محددة (exact versions) لا نطاقات، بحيث يكون `pnpm-lock.yaml` هو المصدر الوحيد للحقيقة في بيئة الإنتاج.
 
@@ -263,84 +263,84 @@
 
 ### الطبقة 1: ملفات السيرفر الأساسية (تعديل مباشر)
 
-| # | الملف | نوع التعديل | الوصف |
-|---|-------|-------------|-------|
-| 1 | `server/agent-review.mjs` | **استبدال** | إزالة import لـ `@anthropic-ai/sdk`، استبدال بـ LangChain model factory |
-| 2 | `server/final-review.mjs` | **استبدال** | نفس التحويل + إزالة REST fallback عبر axios |
-| 3 | `server/provider-api-runtime.mjs` | **استبدال/حذف** | تحويل لـ provider-agnostic runtime أو حذف كامل لصالح LangChain config |
+| #   | الملف                             | نوع التعديل     | الوصف                                                                   |
+| --- | --------------------------------- | --------------- | ----------------------------------------------------------------------- |
+| 1   | `server/agent-review.mjs`         | **استبدال**     | إزالة import لـ `@anthropic-ai/sdk`، استبدال بـ LangChain model factory |
+| 2   | `server/final-review.mjs`         | **استبدال**     | نفس التحويل + إزالة REST fallback عبر axios                             |
+| 3   | `server/provider-api-runtime.mjs` | **استبدال/حذف** | تحويل لـ provider-agnostic runtime أو حذف كامل لصالح LangChain config   |
 
 ### الطبقة 2: Controllers و Routes (تعديل)
 
-| # | الملف | نوع التعديل | الوصف |
-|---|-------|-------------|-------|
-| 4 | `server/controllers/agent-review-controller.mjs` | **تعديل** | تحديث imports وأسماء الدوال المصدّرة |
-| 5 | `server/controllers/final-review-controller.mjs` | **تعديل** | تحديث imports وأسماء الدوال المصدّرة |
-| 6 | `server/routes/index.mjs` | **تعديل** | تحديث health endpoint لعرض معلومات provider-agnostic |
+| #   | الملف                                            | نوع التعديل | الوصف                                                |
+| --- | ------------------------------------------------ | ----------- | ---------------------------------------------------- |
+| 4   | `server/controllers/agent-review-controller.mjs` | **تعديل**   | تحديث imports وأسماء الدوال المصدّرة                 |
+| 5   | `server/controllers/final-review-controller.mjs` | **تعديل**   | تحديث imports وأسماء الدوال المصدّرة                 |
+| 6   | `server/routes/index.mjs`                        | **تعديل**   | تحديث health endpoint لعرض معلومات provider-agnostic |
 
 ### الطبقة 3: ملفات جديدة (إضافة)
 
-| # | الملف | نوع التعديل | الوصف |
-|---|-------|-------------|-------|
-| 7 | `server/langchain-model-factory.mjs` | **إنشاء** | Factory function لإنشاء LangChain model من صيغة `provider:model` |
-| 8 | `server/langchain-fallback-chain.mjs` | **إنشاء** | منطق الـ fallback chain بين المزودين |
-| 9 | `server/provider-config.mjs` | **إنشاء** | تحليل متغيرات البيئة وتكوين المزودين + validation |
+| #   | الملف                                 | نوع التعديل | الوصف                                                            |
+| --- | ------------------------------------- | ----------- | ---------------------------------------------------------------- |
+| 7   | `server/langchain-model-factory.mjs`  | **إنشاء**   | Factory function لإنشاء LangChain model من صيغة `provider:model` |
+| 8   | `server/langchain-fallback-chain.mjs` | **إنشاء**   | منطق الـ fallback chain بين المزودين                             |
+| 9   | `server/provider-config.mjs`          | **إنشاء**   | تحليل متغيرات البيئة وتكوين المزودين + validation                |
 
 ### الطبقة 4: أنواع TypeScript (تعديل/إضافة)
 
-| # | الملف | نوع التعديل | الوصف |
-|---|-------|-------------|-------|
-| 10 | `src/types/agent-review.ts` | **مراجعة** | التأكد من عدم وجود أنواع مرتبطة بـ Anthropic SDK |
-| 11 | `src/types/final-review.ts` | **مراجعة** | نفس المراجعة |
+| #   | الملف                       | نوع التعديل | الوصف                                            |
+| --- | --------------------------- | ----------- | ------------------------------------------------ |
+| 10  | `src/types/agent-review.ts` | **مراجعة**  | التأكد من عدم وجود أنواع مرتبطة بـ Anthropic SDK |
+| 11  | `src/types/final-review.ts` | **مراجعة**  | نفس المراجعة                                     |
 
 ### الطبقة 5: ملفات الفرونت إند (مراجعة — بدون تعديل متوقع)
 
-| # | الملف | نوع التعديل | الوصف |
-|---|-------|-------------|-------|
-| 12 | `src/extensions/Arabic-Screenplay-Classifier-Agent.ts` | **مراجعة** | إزالة أي إشارة مباشرة لـ Anthropic model IDs |
-| 13 | `src/extensions/paste-classifier-config.ts` | **مراجعة** | التأكد من عدم وجود Anthropic-specific logic |
-| 14 | `src/extensions/paste-classifier.ts` | **مراجعة** | لا تعديل متوقع (يتعامل مع endpoints فقط) |
-| 15 | `src/final-review/payload-builder.ts` | **مراجعة** | لا تعديل متوقع (provider-agnostic بالفعل) |
-| 16 | `src/pipeline/command-engine.ts` | **مراجعة** | لا تعديل متوقع |
-| 17 | `src/pipeline/ingestion-orchestrator.ts` | **مراجعة** | لا تعديل متوقع |
+| #   | الملف                                                  | نوع التعديل | الوصف                                        |
+| --- | ------------------------------------------------------ | ----------- | -------------------------------------------- |
+| 12  | `src/extensions/Arabic-Screenplay-Classifier-Agent.ts` | **مراجعة**  | إزالة أي إشارة مباشرة لـ Anthropic model IDs |
+| 13  | `src/extensions/paste-classifier-config.ts`            | **مراجعة**  | التأكد من عدم وجود Anthropic-specific logic  |
+| 14  | `src/extensions/paste-classifier.ts`                   | **مراجعة**  | لا تعديل متوقع (يتعامل مع endpoints فقط)     |
+| 15  | `src/final-review/payload-builder.ts`                  | **مراجعة**  | لا تعديل متوقع (provider-agnostic بالفعل)    |
+| 16  | `src/pipeline/command-engine.ts`                       | **مراجعة**  | لا تعديل متوقع                               |
+| 17  | `src/pipeline/ingestion-orchestrator.ts`               | **مراجعة**  | لا تعديل متوقع                               |
 
 ### الطبقة 6: الاختبارات (تعديل مباشر)
 
-| # | الملف | نوع التعديل | الوصف |
-|---|-------|-------------|-------|
-| 18 | `tests/unit/server/agent-review.contract.test.ts` | **تعديل** | تحديث mocks لـ LangChain بدل Anthropic SDK |
-| 19 | `tests/unit/server/final-review-command-parser.test.ts` | **تعديل** | تحديث mocks وتوقعات الاستجابة |
-| 20 | `tests/unit/final-review-validation.test.ts` | **مراجعة** | التأكد من التوافق |
-| 21 | `tests/unit/final-review-payload-builder.test.ts` | **مراجعة** | لا تعديل متوقع |
-| 22 | `tests/unit/extensions/paste-classifier.resilience.test.ts` | **مراجعة** | التأكد من التوافق |
-| 23 | `tests/integration/final-review-pipeline.test.ts` | **تعديل** | تحديث للعمل مع LangChain mocks |
+| #   | الملف                                                       | نوع التعديل | الوصف                                      |
+| --- | ----------------------------------------------------------- | ----------- | ------------------------------------------ |
+| 18  | `tests/unit/server/agent-review.contract.test.ts`           | **تعديل**   | تحديث mocks لـ LangChain بدل Anthropic SDK |
+| 19  | `tests/unit/server/final-review-command-parser.test.ts`     | **تعديل**   | تحديث mocks وتوقعات الاستجابة              |
+| 20  | `tests/unit/final-review-validation.test.ts`                | **مراجعة**  | التأكد من التوافق                          |
+| 21  | `tests/unit/final-review-payload-builder.test.ts`           | **مراجعة**  | لا تعديل متوقع                             |
+| 22  | `tests/unit/extensions/paste-classifier.resilience.test.ts` | **مراجعة**  | التأكد من التوافق                          |
+| 23  | `tests/integration/final-review-pipeline.test.ts`           | **تعديل**   | تحديث للعمل مع LangChain mocks             |
 
 ### الطبقة 7: التكوين والبيئة (تعديل)
 
-| # | الملف | نوع التعديل | الوصف |
-|---|-------|-------------|-------|
-| 24 | `.env.example` | **تعديل** | إضافة متغيرات `AGENT_REVIEW_MODEL`، `OPENAI_API_KEY`، `DEEPSEEK_*` |
-| 25 | `.env.test.example` | **تعديل** | تحديث للتوافق |
-| 26 | `package.json` | **تعديل** | إضافة `@langchain/core`، `@langchain/anthropic`، `@langchain/openai`، `@langchain/google-genai`، إزالة `@anthropic-ai/sdk` من dependencies |
+| #   | الملف               | نوع التعديل | الوصف                                                                                                                                      |
+| --- | ------------------- | ----------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
+| 24  | `.env.example`      | **تعديل**   | إضافة متغيرات `AGENT_REVIEW_MODEL`، `OPENAI_API_KEY`، `DEEPSEEK_*`                                                                         |
+| 25  | `.env.test.example` | **تعديل**   | تحديث للتوافق                                                                                                                              |
+| 26  | `package.json`      | **تعديل**   | إضافة `@langchain/core`، `@langchain/anthropic`، `@langchain/openai`، `@langchain/google-genai`، إزالة `@anthropic-ai/sdk` من dependencies |
 
 ### الطبقة 8: التوثيق (تحديث)
 
-| # | الملف | نوع التعديل | الوصف |
-|---|-------|-------------|-------|
-| 27 | `CLAUDE.md` | **تعديل** | تحديث جدول الـ endpoints وقسم AI providers |
-| 28 | `.specify/memory/constitution.md` | **تعديل** | تحديث Technical Constraints وAI Providers |
+| #   | الملف                             | نوع التعديل | الوصف                                      |
+| --- | --------------------------------- | ----------- | ------------------------------------------ |
+| 27  | `CLAUDE.md`                       | **تعديل**   | تحديث جدول الـ endpoints وقسم AI providers |
+| 28  | `.specify/memory/constitution.md` | **تعديل**   | تحديث Technical Constraints وAI Providers  |
 
 ### ملخص الأرقام
 
-| الفئة | عدد الملفات | نوع التعديل |
-|-------|-------------|-------------|
-| سيرفر (تعديل مباشر) | 6 | استبدال/تعديل |
-| ملفات جديدة | 3 | إنشاء |
-| أنواع TypeScript | 2 | مراجعة |
-| فرونت إند | 6 | مراجعة |
-| اختبارات | 6 | تعديل/مراجعة |
-| تكوين وبيئة | 3 | تعديل |
-| توثيق | 2 | تعديل |
-| **المجموع** | **28 ملف** | — |
+| الفئة               | عدد الملفات | نوع التعديل   |
+| ------------------- | ----------- | ------------- |
+| سيرفر (تعديل مباشر) | 6           | استبدال/تعديل |
+| ملفات جديدة         | 3           | إنشاء         |
+| أنواع TypeScript    | 2           | مراجعة        |
+| فرونت إند           | 6           | مراجعة        |
+| اختبارات            | 6           | تعديل/مراجعة  |
+| تكوين وبيئة         | 3           | تعديل         |
+| توثيق               | 2           | تعديل         |
+| **المجموع**         | **28 ملف**  | —             |
 
 ### ترتيب التنفيذ المطلوب
 

@@ -4,16 +4,19 @@ description: "Visual styling reference for the minimax-xlsx skill. Contains them
 ---
 
 <neutral_palette>
+
 ## Grayscale Theme (Standard Default)
 
 ### Color Discipline (Strictly Enforced)
 
 **Foundation tones (only these three):**
+
 - **White (#FEFEFE)** — backgrounds, data regions
 - **Black (#1A1A1A)** — body text, primary headers
 - **Grey (multiple shades)** — structural elements, borders, secondary labels
 
 **Sole accent: Blue**
+
 - For any emphasis, differentiation, or callout, use **blue** at varying intensity
 - No green, red, orange, purple, or other hues (exception: region-specific financial indicators)
 
@@ -45,9 +48,11 @@ for cell in ws['B2:F2'][0]:
     cell.fill = hdr_fill
     cell.font = hdr_font
 ```
+
 </neutral_palette>
 
 <fiscal_palette>
+
 ## Financial Theme (Monetary/Fiscal Tasks Only)
 
 Activate this palette when the task involves: equities, GDP, compensation, revenue, margins, budgeting, ROI, government finance, or similar fiscal domains.
@@ -80,6 +85,7 @@ for cell in ws['B2:F2'][0]:
 </fiscal_palette>
 
 <verdant_palette>
+
 ## Verdant Theme (Ecology / Education / Humanities)
 
 Activate this palette when the task involves: environmental analysis, education metrics, agriculture, healthcare, sustainability reporting, life sciences, or general research that benefits from a warm organic tone.
@@ -87,11 +93,13 @@ Activate this palette when the task involves: environmental analysis, education 
 ### Color Discipline
 
 **Foundation tones:**
+
 - **Mist white (#F0F5F1)** — backgrounds, data regions
 - **Forest dark (#1A2E22)** — body text, primary headers
 - **Sage grey (multiple shades)** — structural elements, borders, secondary labels
 
 **Sole accent: Gold**
+
 - For emphasis, differentiation, or callouts, use **warm gold** at varying intensity
 - No blue, red, purple, or other hues
 
@@ -124,9 +132,11 @@ for cell in ws['B2:F2'][0]:
     cell.fill = vh_fill
     cell.font = vh_font
 ```
+
 </verdant_palette>
 
 <dusk_palette>
+
 ## Dusk Theme (Technology / Creative / Scientific)
 
 Activate this palette when the task involves: technology metrics, product analytics, engineering reports, creative industry analysis, scientific data, or presentation-grade deliverables that need a modern aesthetic.
@@ -134,11 +144,13 @@ Activate this palette when the task involves: technology metrics, product analyt
 ### Color Discipline
 
 **Foundation tones:**
+
 - **Soft lavender (#F7F3FA)** — backgrounds, data regions
 - **Dark grape (#221429)** — body text, primary headers
 - **Iris grey (multiple shades)** — structural elements, borders, secondary labels
 
 **Sole accent: Copper**
+
 - For emphasis, differentiation, or callouts, use **warm copper** at varying intensity
 - No blue, green, or other hues
 
@@ -171,6 +183,7 @@ for cell in ws['B2:F2'][0]:
     cell.fill = dh_fill
     cell.font = dh_font
 ```
+
 </dusk_palette>
 
 <conditional_rules>
@@ -179,12 +192,12 @@ for cell in ws['B2:F2'][0]:
 
 Use conditional formatting liberally to elevate the visual quality and analytical depth of your deliverables.
 
-| Content Type | Technique | Sample Code |
-|---|---|---|
-| Raw numbers | **Data Bars** | `DataBarRule(start_type='min', end_type='max', color='5B8DB8', showValue=True)` |
-| Spread/range | **Color Scales** | `ColorScaleRule(start_type='min', start_color='FEFEFE', end_type='max', end_color='5B8DB8')` |
-| Status indicators | **Icon Sets** | `IconSetRule(icon_style='3Arrows', type='percent', values=[0,25,75])` |
-| Boundary triggers | **Cell Highlights** | `CellIsRule(operator='greaterThan', formula=['50000'], fill=accent_fill)` |
+| Content Type      | Technique           | Sample Code                                                                                  |
+| ----------------- | ------------------- | -------------------------------------------------------------------------------------------- |
+| Raw numbers       | **Data Bars**       | `DataBarRule(start_type='min', end_type='max', color='5B8DB8', showValue=True)`              |
+| Spread/range      | **Color Scales**    | `ColorScaleRule(start_type='min', start_color='FEFEFE', end_type='max', end_color='5B8DB8')` |
+| Status indicators | **Icon Sets**       | `IconSetRule(icon_style='3Arrows', type='percent', values=[0,25,75])`                        |
+| Boundary triggers | **Cell Highlights** | `CellIsRule(operator='greaterThan', formula=['50000'], fill=accent_fill)`                    |
 
 ```python
 from openpyxl.formatting.rule import DataBarRule, ColorScaleRule, IconSetRule, CellIsRule
@@ -207,15 +220,16 @@ ws.conditional_formatting.add('F3:F200', IconSetRule(icon_style='3Arrows', type=
 
 ## Layout Specification
 
-| Rows | Purpose | Formatting |
-|------|---------|------------|
-| 3-4 | **Document title** | 18-20pt, bold, center-aligned |
-| 6 | Tagline or scope description | 12pt, grey text |
-| 8-16 | **Headline metrics** | Tabular layout with key figures highlighted |
-| 18-21 | **Worksheet directory** | Sheet names mapped to brief descriptions |
-| 23+ | Disclaimers, usage notes | Small font, grey |
+| Rows  | Purpose                      | Formatting                                  |
+| ----- | ---------------------------- | ------------------------------------------- |
+| 3-4   | **Document title**           | 18-20pt, bold, center-aligned               |
+| 6     | Tagline or scope description | 12pt, grey text                             |
+| 8-16  | **Headline metrics**         | Tabular layout with key figures highlighted |
+| 18-21 | **Worksheet directory**      | Sheet names mapped to brief descriptions    |
+| 23+   | Disclaimers, usage notes     | Small font, grey                            |
 
 **When the workbook includes pivot tables**, add this notice:
+
 ```
 After opening, update the PivotTable cache:
   * On Windows: select any cell inside the PivotTable, press Alt+F5

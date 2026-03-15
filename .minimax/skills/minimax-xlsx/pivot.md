@@ -55,24 +55,24 @@ Why checkpoint 7 matters: a second openpyxl save can repackage XML relationships
 
 ### Required arguments
 
-| Argument | Meaning | Example |
-|---|---|---|
-| `input.xlsx` | Source workbook to read | `working.xlsx` |
-| `output.xlsx` | New workbook to generate | `deliverable.xlsx` |
-| `--source` | Full source range with sheet prefix | `"RevenueLog!B3:H920"` |
-| `--location` | Pivot anchor cell | `"PivotBoard!C4"` |
-| `--values` | Metric + reducer list | `"NetAmount:sum,OrderNo:count"` |
+| Argument      | Meaning                             | Example                         |
+| ------------- | ----------------------------------- | ------------------------------- |
+| `input.xlsx`  | Source workbook to read             | `working.xlsx`                  |
+| `output.xlsx` | New workbook to generate            | `deliverable.xlsx`              |
+| `--source`    | Full source range with sheet prefix | `"RevenueLog!B3:H920"`          |
+| `--location`  | Pivot anchor cell                   | `"PivotBoard!C4"`               |
+| `--values`    | Metric + reducer list               | `"NetAmount:sum,OrderNo:count"` |
 
 ### Optional arguments
 
-| Argument | Meaning | Example |
-|---|---|---|
-| `--rows` | Row grouping fields | `"Region,Channel"` |
-| `--cols` | Column grouping fields | `"Quarter"` |
-| `--filters` | Page filters | `"Year,Owner"` |
-| `--name` | Pivot object name | `"QuarterlyMix"` |
-| `--style` | Theme (`monochrome` / `finance`) | `"monochrome"` |
-| `--chart` | Companion chart (`bar` / `line` / `pie`) | `"line"` |
+| Argument    | Meaning                                  | Example            |
+| ----------- | ---------------------------------------- | ------------------ |
+| `--rows`    | Row grouping fields                      | `"Region,Channel"` |
+| `--cols`    | Column grouping fields                   | `"Quarter"`        |
+| `--filters` | Page filters                             | `"Year,Owner"`     |
+| `--name`    | Pivot object name                        | `"QuarterlyMix"`   |
+| `--style`   | Theme (`monochrome` / `finance`)         | `"monochrome"`     |
+| `--chart`   | Companion chart (`bar` / `line` / `pie`) | `"line"`           |
 
 Supported reducers: `sum`, `count`, `avg`, `average`, `min`, `max`.
 
@@ -147,12 +147,12 @@ Run:
 
 ## 8) Failure Playbook
 
-| Symptom | Likely Cause | Action |
-|---|---|---|
-| Pivot shows no records | Source range clipped | Re-run `info`, expand `--source` to full block |
-| "Field not found" | Header mismatch or typo | Copy header text directly from `info` output |
-| Validation fails on pivot nodes | Damaged pivot relationships | Rebuild from base workbook, run pivot once as final step |
-| CLI execution fails unexpectedly | Workbook locked by another app | Close Excel/WPS process and retry |
+| Symptom                          | Likely Cause                   | Action                                                   |
+| -------------------------------- | ------------------------------ | -------------------------------------------------------- |
+| Pivot shows no records           | Source range clipped           | Re-run `info`, expand `--source` to full block           |
+| "Field not found"                | Header mismatch or typo        | Copy header text directly from `info` output             |
+| Validation fails on pivot nodes  | Damaged pivot relationships    | Rebuild from base workbook, run pivot once as final step |
+| CLI execution fails unexpectedly | Workbook locked by another app | Close Excel/WPS process and retry                        |
 
 ## 9) Hard Prohibitions
 

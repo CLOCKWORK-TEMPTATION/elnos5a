@@ -97,8 +97,6 @@ server.listen(PORT, HOST, () => {
   // eslint-disable-next-line no-console
   console.log(`text-extract:     http://${HOST}:${PORT}/api/text-extract`);
   // eslint-disable-next-line no-console
-  console.log(`review endpoint:  http://${HOST}:${PORT}/api/agent/review`);
-  // eslint-disable-next-line no-console
   console.log(
     `ai-context:       http://${HOST}:${PORT}/api/ai/context-enhance`
   );

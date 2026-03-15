@@ -98,8 +98,8 @@ const runAntiword = async (antiwordPath, args, antiwordHome) =>
 
 const resolveTempFilename = (filename) => {
   const base = basename(filename || "document.doc");
-  const hscene_header_3ocExt = extname(base).toLowerCase() === ".doc";
-  return hscene_header_3ocExt ? base : `${base}.doc`;
+  const hasDocExt = extname(base).toLowerCase() === ".doc";
+  return hasDocExt ? base : `${base}.doc`;
 };
 
 export const convertDocBufferToText = async (buffer, filename) => {

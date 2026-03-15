@@ -24,6 +24,7 @@ import {
 import {
   buildFileOpenPipelineAction,
   extractImportedFile,
+  fetchUnifiedTextExtract,
   probeBackendPdfOcrReadiness,
   pickImportFile,
 } from "../utils/file-import";
@@ -68,8 +69,7 @@ export const openFile = async (
         filename: file.name,
         mode,
         strategy: "backend-only-strict",
-        pipeline:
-          "frontend-open->backend-extract->backend-agent-review->editor-apply",
+        pipeline: "frontend-open->backend-extract->editor-apply",
       },
     });
 
@@ -118,6 +118,46 @@ export const openFile = async (
       schemaElementCount: extraction.schemaElements?.length ?? 0,
       latencyMs: Math.round(performance.now() - extractStart),
     });
+
+    // T016-T018 (FR-005, FR-006): DOC files must go through unified
+    // /api/text-extract before classification. The unified response
+    // provides schema elements as hints for the local classifier.
+    // FR-006: failure is explicit — no silent fallback.
+    const isDocFile = detectedFileType === "doc";
+    if (isDocFile && extraction.text.trim()) {
+      logger.info(
+        "DOC unified pipeline: sending extracted text to /api/text-extract",
+        {
+          scope: "file-import",
+          data: {
+            filename: file.name,
+            textLength: extraction.text.length,
+          },
+        }
+      );
+
+      const unifiedResult = await fetchUnifiedTextExtract(
+        extraction.text,
+        "doc"
+      );
+
+      extraction.schemaElements = unifiedResult.schemaElements;
+
+      pipelineRecorder.logBridgeCall(
+        "doc",
+        unifiedResult.schemaElements.length,
+        unifiedResult.processingTimeMs
+      );
+
+      logger.info("DOC unified pipeline: received unified response", {
+        scope: "file-import",
+        data: {
+          schemaElementCount: unifiedResult.schemaElements.length,
+          processingTimeMs: unifiedResult.processingTimeMs,
+        },
+      });
+    }
+
     const action = buildFileOpenPipelineAction(extraction, mode);
     let appliedPipeline = "paste-classifier" as const;
 

@@ -100,7 +100,10 @@ export const isTemporaryProviderError = (error) => {
   }
 
   // ── Permanent errors: Gemini INVALID_ARGUMENT for payload size (FR-006-B) ──
-  if (message.includes("invalid_argument") && !message.includes("resource_exhausted")) {
+  if (
+    message.includes("invalid_argument") &&
+    !message.includes("resource_exhausted")
+  ) {
     return false;
   }
 
@@ -295,8 +298,7 @@ export const invokeWithFallback = async ({
 
         if (errorInfo.temporary && attempt < maxRetries) {
           retryCount += 1;
-          const delay =
-            baseDelayMs * Math.pow(backoffMultiplier, attempt - 1);
+          const delay = baseDelayMs * Math.pow(backoffMultiplier, attempt - 1);
           await sleep(delay);
           continue;
         }
@@ -331,4 +333,3 @@ export const invokeWithFallback = async ({
     }
   );
 };
-

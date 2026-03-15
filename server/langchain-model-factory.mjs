@@ -9,11 +9,7 @@ import { ChatOpenAI } from "@langchain/openai";
  */
 export const createReviewModel = (
   target,
-  {
-    temperature = 0,
-    maxTokens = undefined,
-    timeoutMs = undefined,
-  } = {}
+  { temperature = 0, maxTokens = undefined, timeoutMs = undefined } = {}
 ) => {
   if (!target?.valid) {
     throw new Error(target?.error || "Review target is not valid.");
@@ -81,4 +77,3 @@ export const createReviewModel = (
 
   throw new Error(`Unsupported review provider: ${target.provider}`);
 };
-

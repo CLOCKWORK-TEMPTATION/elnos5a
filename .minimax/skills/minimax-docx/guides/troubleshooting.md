@@ -8,14 +8,14 @@
 
 **FontSize.Val uses half-points, NOT points!**
 
-| Val | Actual Size | Use Case |
-|-----|-------------|----------|
-| `"144"` | 72pt | Extra large title |
-| `"72"` | 36pt | Large title |
-| `"44"` | 22pt | Medium title |
-| `"24"` | 12pt | Body text |
-| `"22"` | 11pt | Body text |
-| `"20"` | 10pt | Footnote |
+| Val     | Actual Size | Use Case          |
+| ------- | ----------- | ----------------- |
+| `"144"` | 72pt        | Extra large title |
+| `"72"`  | 36pt        | Large title       |
+| `"44"`  | 22pt        | Medium title      |
+| `"24"`  | 12pt        | Body text         |
+| `"22"`  | 11pt        | Body text         |
+| `"20"`  | 10pt        | Footnote          |
 
 ```csharp
 // ❌ Wrong - Expecting Val="44" to be 44pt
@@ -44,6 +44,7 @@ new FontSize { Val = "88" }  // 44pt
 ---
 
 ## 2. Landscape Page Setup
+
 **Key**: Width/Height values are swapped from portrait.
 
 ```csharp
@@ -59,6 +60,7 @@ new PageSize {
 ```
 
 **Landscape Checklist**:
+
 - [ ] PageSize.Width = Portrait height value
 - [ ] PageSize.Height = Portrait width value
 - [ ] PageSize.Orient = Landscape
@@ -67,6 +69,7 @@ new PageSize {
 ---
 
 ## 3. C# Constructor Multi-Element Syntax
+
 **OpenXML constructors accept multiple child elements. Bracket positions are error-prone.**
 
 ```csharp
@@ -97,6 +100,7 @@ body.Append(new Paragraph(
 ---
 
 ## 4. Working Directory
+
 **Run `python3 <skill-path>/docx_engine.py ...` from the user workspace (`cwd`).**
 
 `docx_engine.py` resolves paths relative to current working directory:
@@ -212,6 +216,7 @@ var table = new Table(
 When a document needs a **full-width title/header area** above **multi-column body text** (e.g., newspaper masthead, IEEE paper title, magazine cover), you must use **Continuous section breaks** to switch column counts without inserting a page break.
 
 **Pattern:**
+
 ```
 [Full-width zone: masthead/title, cols=1]
     → Continuous section break (ends cols=1 zone)
@@ -220,6 +225,7 @@ When a document needs a **full-width title/header area** above **multi-column bo
 ```
 
 **How it works:**
+
 1. Write the full-width content (title, subtitle, author info, etc.)
 2. End the full-width zone with a `Continuous` section break that declares `ColumnCount = 1`
 3. Write the multi-column body content
@@ -291,6 +297,7 @@ body.Append(new Paragraph(new Run(new Text("Column 3 article text..."))));
 ```
 
 **Key rules:**
+
 - You need exactly **N-1 column breaks** for N columns
 - The column break can be inside any Run — it pushes all subsequent content to the next column
 - If a column break is the only content in a paragraph, that paragraph acts as a column separator
@@ -300,21 +307,25 @@ body.Append(new Paragraph(new Run(new Text("Column 3 article text..."))));
 When filling N columns on a single page, estimate how much content is needed:
 
 **Single-column usable width:**
+
 ```
 colWidth = (pageWidth - marginLeft - marginRight - (N-1) × columnSpace) / N
 ```
 
 **Characters per line (Chinese, 10pt ≈ 210 twips per character):**
+
 ```
 charsPerLine ≈ colWidth(twips) / 210
 ```
 
 **Lines per column:**
+
 ```
 linesPerCol ≈ (pageHeight - marginTop - marginBottom - headerAreaHeight) / lineSpacing(twips)
 ```
 
 **Example — A4 landscape, 5 columns, 10pt Chinese text:**
+
 ```
 pageWidth = 16838, marginLR = 900 each, columnSpace = 200 twips
 colWidth = (16838 - 900 - 900 - 4×200) / 5 = 2847 twips
@@ -326,6 +337,7 @@ Total for 5 columns ≈ 1690 characters
 ```
 
 **⚠️ If the user asks to "fill all N columns" but content is insufficient:**
+
 - Generate supplementary content (filler articles, lorem ipsum equivalent)
 - Or reduce font size / tighten line spacing to make content stretch further
 - Or reduce column count to match available content
@@ -335,6 +347,7 @@ Total for 5 columns ≈ 1690 characters
 For newspaper-style or poster layouts that **must fit on a single page**:
 
 **Mandatory rules:**
+
 1. **All section breaks must use `SectionMarkValues.Continuous`** — never use `NextPage`
 2. **Never insert `Break { Type = BreakValues.Page }`** — this creates a second page
 3. **Back-calculate content limits** — estimate max content per §5.4, stay within bounds
@@ -358,6 +371,7 @@ new Run(new Break { Type = BreakValues.Page })
 ```
 
 **Broadsheet checklist:**
+
 - [ ] All `SectionType` values are `Continuous`
 - [ ] No `BreakValues.Page` anywhere in the document
 - [ ] Content volume fits within estimated page capacity
@@ -368,14 +382,14 @@ new Run(new Break { Type = BreakValues.Page })
 
 ## 6. Compile Error Quick Reference
 
-| Error Code | Meaning | Solution |
-|------------|---------|----------|
-| CS1003 | Chinese quotes as delimiter | Use `\u201c\u201d` escaping |
-| CS0246 | Type not found | Check namespace or use full qualified name |
-| CS1026 | Missing closing bracket | Check constructor bracket matching |
-| CS1501 | Wrong argument count | Check method signatures in `src/Core/*.cs` |
-| CS0029 | Type conversion failed | Use `(UInt32Value)(uint)` |
-| CS0104 | Ambiguous call | Use namespace aliases `DW.`/`A.` |
+| Error Code | Meaning                     | Solution                                   |
+| ---------- | --------------------------- | ------------------------------------------ |
+| CS1003     | Chinese quotes as delimiter | Use `\u201c\u201d` escaping                |
+| CS0246     | Type not found              | Check namespace or use full qualified name |
+| CS1026     | Missing closing bracket     | Check constructor bracket matching         |
+| CS1501     | Wrong argument count        | Check method signatures in `src/Core/*.cs` |
+| CS0029     | Type conversion failed      | Use `(UInt32Value)(uint)`                  |
+| CS0104     | Ambiguous call              | Use namespace aliases `DW.`/`A.`           |
 
 ---
 
@@ -496,10 +510,10 @@ new Color { Val = "5a6b62" }  // Neutral gray (secondary text)
 
 `python3 <skill-path>/docx_engine.py render` can normalize many element-order issues, but **cannot fix**:
 
-| Auto-Fixed | NOT Auto-Fixed |
-|------------|----------------|
-| Element order in RunProperties | Table width type mismatch |
-| Element order in SectionProperties | Missing TableGrid |
-| HeaderRef/FooterRef ordering | Duplicate docPr IDs |
+| Auto-Fixed                         | NOT Auto-Fixed            |
+| ---------------------------------- | ------------------------- |
+| Element order in RunProperties     | Table width type mismatch |
+| Element order in SectionProperties | Missing TableGrid         |
+| HeaderRef/FooterRef ordering       | Duplicate docPr IDs       |
 
 **Best Practice**: Write code in correct order from the start rather than relying on auto-fix.

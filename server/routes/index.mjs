@@ -10,7 +10,6 @@ import {
   ANTIWORD_PREFLIGHT,
 } from "../controllers/extract-controller.mjs";
 import { handleTextExtract } from "../controllers/text-extract-controller.mjs";
-import { handleAgentReview } from "../controllers/agent-review-controller.mjs";
 import { handleFinalReview } from "../controllers/final-review-controller.mjs";
 import { handleExportPdfA } from "../controllers/export-controller.mjs";
 import {
@@ -18,10 +17,6 @@ import {
   getGeminiContextHealth,
 } from "../ai-context-gemini.mjs";
 import { getPdfOcrAgentHealth } from "../pdf-ocr-agent-config.mjs";
-import {
-  getReviewModel,
-  getReviewRuntime,
-} from "../agent-review.mjs";
 import {
   getFinalReviewModel,
   getFinalReviewRuntime,
@@ -85,7 +80,6 @@ const aiLimiter = rateLimit({
 export const registerRoutes = (app) => {
   app.get("/health", async (req, res) => {
     const ocrAgent = await getPdfOcrAgentHealth();
-    const reviewRuntime = getReviewRuntime();
     const finalReviewRuntime = getFinalReviewRuntime();
     const reviewSnapshots = getAllReviewRuntimeSnapshots();
     res.status(200).json({
@@ -99,20 +93,10 @@ export const registerRoutes = (app) => {
       antiwordWarnings: FILE_IMPORT_PREFLIGHT_WARNINGS,
       docxConverterScriptPath: DOCX_TO_DOC_SCRIPT_PATH,
       docxConverterScriptExists: DOCX_TO_DOC_SCRIPT_EXISTS,
-      agentReviewConfigured: reviewRuntime.configured,
       finalReviewConfigured: finalReviewRuntime.configured,
       aiContextLayer: getGeminiContextHealth(),
       ocrConfigured: ocrAgent.configured,
       ocrAgent,
-      reviewModel: getReviewModel(),
-      reviewProvider: reviewRuntime.provider,
-      reviewModelRequested: reviewRuntime.requestedModel,
-      reviewModelResolved: reviewRuntime.resolvedModel,
-      reviewModelFallbackApplied: reviewRuntime.fallbackApplied,
-      reviewModelFallbackReason: reviewRuntime.fallbackReason,
-      reviewApiBaseUrl: reviewRuntime.baseUrl,
-      reviewApiVersion: reviewRuntime.apiVersion,
-      reviewFallbackStatus: reviewRuntime.fallbackApplied ? "active" : "idle",
       finalReviewModel: getFinalReviewModel(),
       finalReviewProvider: finalReviewRuntime.provider,
       finalReviewModelRequested: finalReviewRuntime.requestedModel,
@@ -131,7 +115,6 @@ export const registerRoutes = (app) => {
   app.post("/api/file-extract", extractLimiter, handleExtract);
   app.post("/api/files/extract", extractLimiter, handleExtract);
   app.post("/api/text-extract", extractLimiter, handleTextExtract);
-  app.post("/api/agent/review", reviewLimiter, handleAgentReview);
   app.post("/api/final-review", reviewLimiter, handleFinalReview);
   app.post("/api/ai/context-enhance", aiLimiter, handleContextEnhance);
   app.post("/api/export/pdfa", handleExportPdfA);
