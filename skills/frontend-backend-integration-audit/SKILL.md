@@ -5,18 +5,7 @@ description: تحليل شامل للتكامل بين الواجهة (TypeScrip
 
 # Frontend-Backend Integration Audit
 
-## نظرة عامة
-
-هذه المهارة تفحص التكامل بين الواجهة (TypeScript في `src/` و `app/`) والخلفية (Node.js ES Modules `.mjs` في `server/`) للتأكد من:
-
-1. **توافق العقود (Contract Compliance)** — تطابق request/response schemas بين الطرفين
-2. **توافق الأنواع (Type Compatibility)** — تطابق TypeScript types مع runtime data
-3. **Runtime Guards** — وجود validation كافي على حدود API
-4. **معالجة الأخطاء (Error Handling)** — تغطية شاملة لحالات الفشل
-
----
-
-## متى تستخدم هذه المهارة
+## متى تستخدم
 
 استخدم هذه المهارة عندما:
 
@@ -28,7 +17,35 @@ description: تحليل شامل للتكامل بين الواجهة (TypeScrip
 
 ---
 
-## خطوات التدقيق
+## تصنيف الأسباب الجذرية
+
+صنّف كل مشكلة تكامل ضمن سبب جذري واحد:
+
+- `contract-mismatch`: request/response schema مختلف بين frontend وbackend (field names، types)
+- `type-drift`: TypeScript types لا تعكس runtime data الفعلي
+- `missing-runtime-guard`: غياب Zod/validation على حد ال API
+- `error-gap`: مسارات فشل غير مغطاة أو تكشف معلومات خاطئة للعميل
+- `sse-boundary-break`: SSE stream غير متطابق مع parsing الواجهة
+
+ابدأ بالسبب الجذري ثم وصف العَرَض.
+
+## المرجعية في المشروع
+
+- `server/routes/index.mjs` — تعريف جميع الـ routes
+- `server/controllers/` — controllers (`.mjs`)
+- `src/extensions/classification-types.ts` — الأنواع المشتركة
+- `src/pipeline/` — import orchestration وagent command engine
+- المشروع يستخدم TypeScript strict في frontend و`.mjs` في backend
+
+## نقطة البداية السريعة
+
+1. حدد الـ endpoint المستهدف واقرأ ملفي route وcontroller معاً.
+2. قارن TypeScript types في frontend مع بنية response في backend.
+3. تحقق من وجود runtime validation (Zod/manual) على حد ال API.
+4. صنّف المشكلة باستخدام نماذج `تصنيف الأسباب الجذرية`.
+5. شغّل `pnpm typecheck` و`pnpm test:integration` للتحقق.
+
+## سير العمل
 
 ### المرحلة 1: تحديد نطاق التدقيق
 
@@ -541,14 +558,36 @@ it("handles malformed response", async () => {
 
 ---
 
-## الخلاصة
+## قواعد التقرير
 
-التكامل الصحيح بين الواجهة والخلفية يتطلب:
+- لا تعتمد على TypeScript types وحدها — types تختفي عند runtime
+- تحقّق من runtime validation على حدود API باستخدام Zod أو manual guards
+- لا تقبل type assertion بدون runtime check (تجنّب `as SomeType` على بيانات API)
+- استشهد بالملف والسطر عند ذكر أي تعارض
+- شغّل `pnpm typecheck` و`pnpm test:integration` بعد كل تغيير
 
-1. **عقود واضحة وموثقة** لكل endpoint
-2. **أنواع صريحة** في TypeScript
-3. **runtime validation** شامل على حدود API
-4. **معالجة أخطاء** قوية على جميع المستويات
-5. **اختبارات** تغطي العقود والحالات الحدية
+## قالب التقرير
 
-استخدم هذه المهارة بانتظام للحفاظ على جودة التكامل ومنع المشاكل قبل وقوعها.
+```markdown
+# تدقيق تكامل: [Endpoint أو Module]
+
+## السبب الجذري
+[contract-mismatch / type-drift / missing-runtime-guard / error-gap / sse-boundary-break]
+
+## الملفات المتأثرة
+- Frontend: [path:line]
+- Backend:  [path:line]
+
+## العَرَض
+[what fails at runtime]
+
+## الإصلاح المقترح
+[minimal fix at the owning file]
+
+## التحقق
+`pnpm typecheck` + `pnpm test:integration`
+```
+
+## المراجع
+
+لا توجد ملفات مرجعية خارجية لهذه المهارة — راجع `AGENTS.md` وملفات `specs/` للعقود التفصيلية.
