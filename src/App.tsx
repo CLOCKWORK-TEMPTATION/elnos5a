@@ -279,13 +279,7 @@ export function App(): React.JSX.Element {
     (process.env.NODE_ENV === "development"
       ? "http://127.0.0.1:8787/api/file-extract"
       : "");
-  const explicitAgentReviewEndpoint =
-    (
-      process.env.NEXT_PUBLIC_AGENT_REVIEW_BACKEND_URL as string | undefined
-    )?.trim() ?? "";
   const hasFileImportBackend = fileImportBackendEndpoint.length > 0;
-  const hasAgentReviewBackend =
-    explicitAgentReviewEndpoint.length > 0 || hasFileImportBackend;
 
   const handleTypingModeChange = (
     nextMode: TypingSystemSettings["typingSystemMode"]
@@ -616,7 +610,6 @@ export function App(): React.JSX.Element {
               classifierOptionCount={CLASSIFIER_OPTION_COUNT}
               actionBlockSpacing={ACTION_BLOCK_SPACING}
               hasFileImportBackend={hasFileImportBackend}
-              hasAgentReviewBackend={hasAgentReviewBackend}
             />
           }
         />

@@ -10,10 +10,10 @@ Normalize all template inputs to `.docx` before analysis or rewrite so downstrea
 
 Do not trust extension names alone.
 
-| Format | Signature (hex) | Meaning |
-|---|---|---|
-| OOXML ZIP (`.docx`) | `50 4B 03 04` | Zip package with XML parts |
-| OLE CFB (`.doc`) | `D0 CF 11 E0 A1 B1 1A E1` | Legacy binary Word container |
+| Format              | Signature (hex)           | Meaning                      |
+| ------------------- | ------------------------- | ---------------------------- |
+| OOXML ZIP (`.docx`) | `50 4B 03 04`             | Zip package with XML parts   |
+| OLE CFB (`.doc`)    | `D0 CF 11 E0 A1 B1 1A E1` | Legacy binary Word container |
 
 Quick check:
 

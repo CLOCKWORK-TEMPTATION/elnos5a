@@ -11,13 +11,13 @@
 
 يمثل قيمة `provider:model` بعد التطبيع.
 
-| Field | Type | Description |
-| --- | --- | --- |
-| `raw` | `string` | القيمة الأصلية من env |
-| `provider` | `"anthropic" \| "openai" \| "google-genai" \| "deepseek"` | المزود بعد التطبيع |
-| `model` | `string` | اسم النموذج بدون prefix |
-| `implicitProvider` | `boolean` | `true` إذا كانت القيمة بلا prefix وتم افتراض `anthropic` |
-| `sourceEnv` | `string` | اسم متغير البيئة الذي أتى منه التكوين |
+| Field              | Type                                                      | Description                                              |
+| ------------------ | --------------------------------------------------------- | -------------------------------------------------------- |
+| `raw`              | `string`                                                  | القيمة الأصلية من env                                    |
+| `provider`         | `"anthropic" \| "openai" \| "google-genai" \| "deepseek"` | المزود بعد التطبيع                                       |
+| `model`            | `string`                                                  | اسم النموذج بدون prefix                                  |
+| `implicitProvider` | `boolean`                                                 | `true` إذا كانت القيمة بلا prefix وتم افتراض `anthropic` |
+| `sourceEnv`        | `string`                                                  | اسم متغير البيئة الذي أتى منه التكوين                    |
 
 **Validation rules**
 
@@ -29,13 +29,13 @@
 
 يمثل متطلبات الاعتماد الخاصة بكل مزود.
 
-| Field | Type | Description |
-| --- | --- | --- |
-| `provider` | provider enum | المزود المعني |
-| `apiKeyEnv` | `string` | اسم متغير المفتاح المطلوب |
-| `baseUrlEnv` | `string \| null` | اسم base URL إن وُجد |
-| `apiKeyPresent` | `boolean` | هل المفتاح موجود |
-| `apiKeyValid` | `boolean` | هل المفتاح صالح شكليًا |
+| Field            | Type             | Description               |
+| ---------------- | ---------------- | ------------------------- |
+| `provider`       | provider enum    | المزود المعني             |
+| `apiKeyEnv`      | `string`         | اسم متغير المفتاح المطلوب |
+| `baseUrlEnv`     | `string \| null` | اسم base URL إن وُجد      |
+| `apiKeyPresent`  | `boolean`        | هل المفتاح موجود          |
+| `apiKeyValid`    | `boolean`        | هل المفتاح صالح شكليًا    |
 | `warningMessage` | `string \| null` | رسالة التحذير عند startup |
 
 **Validation rules**
@@ -49,14 +49,14 @@
 
 يمثل التكوين التشغيلي لقناة مراجعة واحدة.
 
-| Field | Type | Description |
-| --- | --- | --- |
-| `channel` | `"agent-review" \| "final-review"` | اسم القناة |
-| `primary` | `ProviderModelSpec` | المزود/النموذج الأساسي |
-| `fallback` | `ProviderModelSpec \| null` | المزود/النموذج البديل |
-| `mockMode` | `"success" \| "error" \| null` | وضع الاختبار الوهمي |
-| `timeoutMs` | `number` | مهلة القناة |
-| `maxRetries` | `number` | عدد retries قبل إعلان الفشل |
+| Field        | Type                               | Description                 |
+| ------------ | ---------------------------------- | --------------------------- |
+| `channel`    | `"agent-review" \| "final-review"` | اسم القناة                  |
+| `primary`    | `ProviderModelSpec`                | المزود/النموذج الأساسي      |
+| `fallback`   | `ProviderModelSpec \| null`        | المزود/النموذج البديل       |
+| `mockMode`   | `"success" \| "error" \| null`     | وضع الاختبار الوهمي         |
+| `timeoutMs`  | `number`                           | مهلة القناة                 |
+| `maxRetries` | `number`                           | عدد retries قبل إعلان الفشل |
 
 **Invariants**
 
@@ -68,12 +68,12 @@
 
 مقبض تنفيذ موحّد فوق LangChain.
 
-| Field | Type | Description |
-| --- | --- | --- |
-| `provider` | provider enum | المزود الفعلي |
-| `model` | `string` | النموذج الفعلي |
-| `invoke` | `(messages, options) => Promise<ProviderInvocationResult>` | واجهة الاستدعاء الموحدة |
-| `supportsFallback` | `boolean` | هل هذا المقبض جزء من chain قابلة للبديل |
+| Field              | Type                                                       | Description                             |
+| ------------------ | ---------------------------------------------------------- | --------------------------------------- |
+| `provider`         | provider enum                                              | المزود الفعلي                           |
+| `model`            | `string`                                                   | النموذج الفعلي                          |
+| `invoke`           | `(messages, options) => Promise<ProviderInvocationResult>` | واجهة الاستدعاء الموحدة                 |
+| `supportsFallback` | `boolean`                                                  | هل هذا المقبض جزء من chain قابلة للبديل |
 
 **Notes**
 
@@ -84,29 +84,29 @@
 
 يمثل نتيجة الاستدعاء الخام قبل parsing.
 
-| Field | Type | Description |
-| --- | --- | --- |
-| `text` | `string` | النص الموحد المستخرج من LangChain response |
-| `provider` | provider enum | المزود الذي أجاب فعليًا |
-| `model` | `string` | النموذج الذي أجاب فعليًا |
-| `latencyMs` | `number` | زمن الاستجابة |
-| `providerStatusCode` | `number \| null` | كود الحالة إن أمكن استخراجه |
-| `usage` | `{ inputTokens?: number, outputTokens?: number } \| null` | استهلاك التوكنز إن توفر |
+| Field                | Type                                                      | Description                                |
+| -------------------- | --------------------------------------------------------- | ------------------------------------------ |
+| `text`               | `string`                                                  | النص الموحد المستخرج من LangChain response |
+| `provider`           | provider enum                                             | المزود الذي أجاب فعليًا                    |
+| `model`              | `string`                                                  | النموذج الذي أجاب فعليًا                   |
+| `latencyMs`          | `number`                                                  | زمن الاستجابة                              |
+| `providerStatusCode` | `number \| null`                                          | كود الحالة إن أمكن استخراجه                |
+| `usage`              | `{ inputTokens?: number, outputTokens?: number } \| null` | استهلاك التوكنز إن توفر                    |
 
 ### 6. ReviewExecutionState
 
 يمثل مسار التنفيذ الفعلي لطلب مراجعة واحد.
 
-| Field | Type | Description |
-| --- | --- | --- |
-| `requestId` | `string` | معرف الطلب |
-| `channel` | channel enum | القناة الحالية |
-| `attempt` | `number` | رقم المحاولة الحالية |
-| `activeProvider` | provider enum | المزود الجاري استخدامه |
-| `usedFallback` | `boolean` | هل تم التحويل للبديل |
-| `failureClass` | `"temporary" \| "permanent" \| null` | تصنيف آخر خطأ |
-| `errors` | `readonly string[]` | ملخص الأخطاء التي حدثت |
-| `completed` | `boolean` | هل انتهى التنفيذ |
+| Field            | Type                                 | Description            |
+| ---------------- | ------------------------------------ | ---------------------- |
+| `requestId`      | `string`                             | معرف الطلب             |
+| `channel`        | channel enum                         | القناة الحالية         |
+| `attempt`        | `number`                             | رقم المحاولة الحالية   |
+| `activeProvider` | provider enum                        | المزود الجاري استخدامه |
+| `usedFallback`   | `boolean`                            | هل تم التحويل للبديل   |
+| `failureClass`   | `"temporary" \| "permanent" \| null` | تصنيف آخر خطأ          |
+| `errors`         | `readonly string[]`                  | ملخص الأخطاء التي حدثت |
+| `completed`      | `boolean`                            | هل انتهى التنفيذ       |
 
 **State transitions**
 
@@ -121,32 +121,32 @@
 
 حالة health المختصرة المخزنة في الذاكرة لكل قناة.
 
-| Field | Type | Description |
-| --- | --- | --- |
-| `channel` | channel enum | اسم القناة |
-| `configuredProvider` | provider enum | المزود المهيأ من env |
-| `configuredModel` | `string` | النموذج المهيأ |
-| `fallbackConfigured` | `boolean` | هل يوجد fallback config |
-| `activeProvider` | provider enum | آخر مزود استخدم فعليًا |
-| `activeModel` | `string` | آخر نموذج استخدم فعليًا |
-| `fallbackStatus` | `"idle" \| "configured" \| "active" \| "failed"` | حالة fallback الحالية |
-| `lastErrorClass` | `"temporary" \| "permanent" \| null` | آخر تصنيف خطأ |
-| `lastUpdatedAt` | `number \| null` | آخر تحديث للحالة |
+| Field                | Type                                             | Description             |
+| -------------------- | ------------------------------------------------ | ----------------------- |
+| `channel`            | channel enum                                     | اسم القناة              |
+| `configuredProvider` | provider enum                                    | المزود المهيأ من env    |
+| `configuredModel`    | `string`                                         | النموذج المهيأ          |
+| `fallbackConfigured` | `boolean`                                        | هل يوجد fallback config |
+| `activeProvider`     | provider enum                                    | آخر مزود استخدم فعليًا  |
+| `activeModel`        | `string`                                         | آخر نموذج استخدم فعليًا |
+| `fallbackStatus`     | `"idle" \| "configured" \| "active" \| "failed"` | حالة fallback الحالية   |
+| `lastErrorClass`     | `"temporary" \| "permanent" \| null`             | آخر تصنيف خطأ           |
+| `lastUpdatedAt`      | `number \| null`                                 | آخر تحديث للحالة        |
 
 ### 8. ReviewAuditLogEntry
 
 سجل لوج واحد لكل طلب مراجعة.
 
-| Field | Type | Description |
-| --- | --- | --- |
-| `requestId` | `string` | معرف الطلب |
-| `importOpId` | `string` | معرف العملية |
-| `channel` | channel enum | agent/final |
-| `provider` | provider enum | المزود الفعلي |
-| `model` | `string` | النموذج الفعلي |
-| `usedFallback` | `boolean` | هل فُعّل fallback |
-| `latencyMs` | `number` | زمن الاستجابة |
-| `status` | `"applied" \| "partial" \| "skipped" \| "error"` | الحالة النهائية |
+| Field          | Type                                             | Description       |
+| -------------- | ------------------------------------------------ | ----------------- |
+| `requestId`    | `string`                                         | معرف الطلب        |
+| `importOpId`   | `string`                                         | معرف العملية      |
+| `channel`      | channel enum                                     | agent/final       |
+| `provider`     | provider enum                                    | المزود الفعلي     |
+| `model`        | `string`                                         | النموذج الفعلي    |
+| `usedFallback` | `boolean`                                        | هل فُعّل fallback |
+| `latencyMs`    | `number`                                         | زمن الاستجابة     |
+| `status`       | `"applied" \| "partial" \| "skipped" \| "error"` | الحالة النهائية   |
 
 ## Relationships
 

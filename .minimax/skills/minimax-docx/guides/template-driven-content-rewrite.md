@@ -62,9 +62,9 @@ If any placeholder remains unexpectedly, return to matrix and patch logic before
 
 ## Minimal Example
 
-| template_snippet | field_name | action | target_value | value_source |
-|---|---|---|---|---|
-| `Acme Co., Ltd.` | company_name | REPLACE | `Beijing Nova Tech Co., Ltd.` | user brief |
-| `[Date]` | contract_date | REPLACE | `2026-02-14` | user brief |
-| `This template is for reference only.` | demo_notice | DROP |  | template cleanup rule |
-| `Authorized Signature` | signature_caption | KEEP |  | structure rule |
+| template_snippet                       | field_name        | action  | target_value                  | value_source          |
+| -------------------------------------- | ----------------- | ------- | ----------------------------- | --------------------- |
+| `Acme Co., Ltd.`                       | company_name      | REPLACE | `Beijing Nova Tech Co., Ltd.` | user brief            |
+| `[Date]`                               | contract_date     | REPLACE | `2026-02-14`                  | user brief            |
+| `This template is for reference only.` | demo_notice       | DROP    |                               | template cleanup rule |
+| `Authorized Signature`                 | signature_caption | KEEP    |                               | structure rule        |

@@ -19,12 +19,12 @@ For template-apply workflow, see `guides/template-apply-workflow.md` first.
 
 `spec/ooxml_order.py` uses layered constraints:
 
-| Layer | Meaning | Typical Use |
-|---|---|---|
-| `MUST` | Schema anchor order | Any generation |
-| `SHOULD` | Compatibility order | Default `repair` profile |
-| `MAY` | Optional hints | `compat`/`strict` |
-| `VENDOR` | Implementation-specific | `strict` diagnostics |
+| Layer    | Meaning                 | Typical Use              |
+| -------- | ----------------------- | ------------------------ |
+| `MUST`   | Schema anchor order     | Any generation           |
+| `SHOULD` | Compatibility order     | Default `repair` profile |
+| `MAY`    | Optional hints          | `compat`/`strict`        |
+| `VENDOR` | Implementation-specific | `strict` diagnostics     |
 
 Profiles: `minimal`, `repair` (default), `compat`, `strict`
 
@@ -42,12 +42,12 @@ python3 <skill-path>/docx_engine.py order pPr repair
 
 **Only these characters require Unicode escaping**:
 
-| Character | Unicode | Reason |
-|-----------|---------|--------|
-| " (Chinese left double quote) | `\u201c` | C# compiler treats it as string delimiter → CS1003 |
-| " (Chinese right double quote) | `\u201d` | Same as above |
-| ' (Chinese left single quote) | `\u2018` | May conflict with character literals |
-| ' (Chinese right single quote) | `\u2019` | Same as above |
+| Character                      | Unicode  | Reason                                             |
+| ------------------------------ | -------- | -------------------------------------------------- |
+| " (Chinese left double quote)  | `\u201c` | C# compiler treats it as string delimiter → CS1003 |
+| " (Chinese right double quote) | `\u201d` | Same as above                                      |
+| ' (Chinese left single quote)  | `\u2018` | May conflict with character literals               |
+| ' (Chinese right single quote) | `\u2019` | Same as above                                      |
 
 ### Wrong vs Correct Examples
 
@@ -86,11 +86,11 @@ var para = new Text(
 
 ### Characters That Don't Need Escaping
 
-| Category | Characters | Example |
-|----------|------------|---------|
-| Book title marks | 《 》 | `"See《Guide》"` |
-| Chinese parentheses | （ ） | `"（Note）"` |
-| Chinese punctuation | ：。，；！？、 | Use directly |
+| Category            | Characters     | Example          |
+| ------------------- | -------------- | ---------------- |
+| Book title marks    | 《 》          | `"See《Guide》"` |
+| Chinese parentheses | （ ）          | `"（Note）"`     |
+| Chinese punctuation | ：。，；！？、 | Use directly     |
 
 ---
 
@@ -122,32 +122,32 @@ using DocumentFormat.OpenXml.Wordprocessing;
 
 ### Common Wrong vs Correct Names
 
-| Wrong | Correct |
-|-------|---------|
-| `mainPart.Styles` | `mainPart.AddNewPart<StyleDefinitionsPart>()` |
-| `StyleBasedOn` | `BasedOn` |
-| `SpacingBefore` / `SpacingAfter` | `SpacingBetweenLines` |
-| `Alignment` / `ParagraphAlignment` | `Justification` |
-| `JustificationValues.Justify` | `JustificationValues.Both` (justified) |
-| `PageBreak` | `new Break { Type = BreakValues.Page }` |
-| `LineSpacing` | `SpacingBetweenLines` |
-| `Indention` (typo) | `Indentation` |
-| `new FontSize { Val = 24 }` (int) | `new FontSize { Val = "24" }` (string) |
-| `StrikeThrough` | `Strike` |
-| `NumberingFormatValues` | `NumberFormatValues` (no -ing) |
-| `new Level(0)` | `new Level() { LevelIndex = 0 }` |
-| `sectPr.TitlePage = new TitlePage()` | `sectPr.Append(new TitlePage())` |
+| Wrong                                | Correct                                       |
+| ------------------------------------ | --------------------------------------------- |
+| `mainPart.Styles`                    | `mainPart.AddNewPart<StyleDefinitionsPart>()` |
+| `StyleBasedOn`                       | `BasedOn`                                     |
+| `SpacingBefore` / `SpacingAfter`     | `SpacingBetweenLines`                         |
+| `Alignment` / `ParagraphAlignment`   | `Justification`                               |
+| `JustificationValues.Justify`        | `JustificationValues.Both` (justified)        |
+| `PageBreak`                          | `new Break { Type = BreakValues.Page }`       |
+| `LineSpacing`                        | `SpacingBetweenLines`                         |
+| `Indention` (typo)                   | `Indentation`                                 |
+| `new FontSize { Val = 24 }` (int)    | `new FontSize { Val = "24" }` (string)        |
+| `StrikeThrough`                      | `Strike`                                      |
+| `NumberingFormatValues`              | `NumberFormatValues` (no -ing)                |
+| `new Level(0)`                       | `new Level() { LevelIndex = 0 }`              |
+| `sectPr.TitlePage = new TitlePage()` | `sectPr.Append(new TitlePage())`              |
 
 ### Paragraph Properties Quick Reference
 
-| Property | Class | Example |
-|----------|-------|---------|
-| Space after | SpacingBetweenLines | `new SpacingBetweenLines { After = "200" }` |
-| Space before | SpacingBetweenLines | `new SpacingBetweenLines { Before = "600" }` |
-| Line spacing | SpacingBetweenLines | `new SpacingBetweenLines { Line = "360", LineRule = LineSpacingRuleValues.Auto }` |
-| First line indent | Indentation | `new Indentation { FirstLine = "420" }` |
-| Center | Justification | `new Justification { Val = JustificationValues.Center }` |
-| Justify | Justification | `new Justification { Val = JustificationValues.Both }` |
+| Property          | Class               | Example                                                                           |
+| ----------------- | ------------------- | --------------------------------------------------------------------------------- |
+| Space after       | SpacingBetweenLines | `new SpacingBetweenLines { After = "200" }`                                       |
+| Space before      | SpacingBetweenLines | `new SpacingBetweenLines { Before = "600" }`                                      |
+| Line spacing      | SpacingBetweenLines | `new SpacingBetweenLines { Line = "360", LineRule = LineSpacingRuleValues.Auto }` |
+| First line indent | Indentation         | `new Indentation { FirstLine = "420" }`                                           |
+| Center            | Justification       | `new Justification { Val = JustificationValues.Center }`                          |
+| Justify           | Justification       | `new Justification { Val = JustificationValues.Both }`                            |
 
 ### Common Code Patterns
 
@@ -179,18 +179,18 @@ OpenXML ordering in `RunProperties` is profile-sensitive. In `strict` profile, u
 
 **Recommended strict-profile order (top to bottom):**
 
-| # | Element | Example |
-|---|---------|---------|
-| 1 | rStyle | `new RunStyle { Val = "Heading1Char" }` |
-| 2 | rFonts | `new RunFonts { Ascii = "Arial", EastAsia = "SimSun" }` |
-| 3 | b | `new Bold()` |
-| 4 | i | `new Italic()` |
-| 5 | strike | `new Strike()` |
-| 6 | color | `new Color { Val = "FF0000" }` |
-| 7 | sz | `new FontSize { Val = "24" }` |
-| 8 | szCs | `new FontSizeComplexScript { Val = "24" }` |
-| 9 | u | `new Underline { Val = UnderlineValues.Single }` |
-| 10 | vertAlign | `new VerticalTextAlignment { Val = VerticalPositionValues.Superscript }` |
+| #   | Element   | Example                                                                  |
+| --- | --------- | ------------------------------------------------------------------------ |
+| 1   | rStyle    | `new RunStyle { Val = "Heading1Char" }`                                  |
+| 2   | rFonts    | `new RunFonts { Ascii = "Arial", EastAsia = "SimSun" }`                  |
+| 3   | b         | `new Bold()`                                                             |
+| 4   | i         | `new Italic()`                                                           |
+| 5   | strike    | `new Strike()`                                                           |
+| 6   | color     | `new Color { Val = "FF0000" }`                                           |
+| 7   | sz        | `new FontSize { Val = "24" }`                                            |
+| 8   | szCs      | `new FontSizeComplexScript { Val = "24" }`                               |
+| 9   | u         | `new Underline { Val = UnderlineValues.Single }`                         |
+| 10  | vertAlign | `new VerticalTextAlignment { Val = VerticalPositionValues.Superscript }` |
 
 ```csharp
 // ❌ Wrong order - sz before color
@@ -213,13 +213,13 @@ new RunProperties(
 
 OpenXML properties often require explicit type conversions.
 
-| Target Type | Conversion | Example |
-|-------------|------------|---------|
-| `UInt32Value` | `(UInt32Value)(uint)value` | `new TableRowHeight { Val = (UInt32Value)(uint)400 }` |
-| `Int32Value` | `(Int32Value)value` | `new Indentation { Left = (Int32Value)420 }` |
-| `StringValue` | `value.ToString()` | `new FontSize { Val = "24" }` |
-| `OnOffValue` | `new OnOffValue(true)` | `new Bold { Val = new OnOffValue(true) }` |
-| `EnumValue<T>` | Direct assignment | `new Justification { Val = JustificationValues.Center }` |
+| Target Type    | Conversion                 | Example                                                  |
+| -------------- | -------------------------- | -------------------------------------------------------- |
+| `UInt32Value`  | `(UInt32Value)(uint)value` | `new TableRowHeight { Val = (UInt32Value)(uint)400 }`    |
+| `Int32Value`   | `(Int32Value)value`        | `new Indentation { Left = (Int32Value)420 }`             |
+| `StringValue`  | `value.ToString()`         | `new FontSize { Val = "24" }`                            |
+| `OnOffValue`   | `new OnOffValue(true)`     | `new Bold { Val = new OnOffValue(true) }`                |
+| `EnumValue<T>` | Direct assignment          | `new Justification { Val = JustificationValues.Center }` |
 
 ```csharp
 // ❌ Wrong - int cannot convert to UInt32Value
@@ -239,11 +239,11 @@ new TableRowHeight { Val = (UInt32Value)(uint)(row == 0 ? 400 : 300) }
 
 ## 8. Value Constraints
 
-| Property | Type | Wrong | Correct |
-|----------|------|-------|---------|
-| `FontSize.Val` | Integer string | `"17.5"` ❌ | `"18"` ✓ (9pt) |
-| `Indentation.FirstLine` | UInt32 (≥0) | `"-420"` ❌ | `"420"` ✓ |
-| `Indentation.Left` | UInt32 (≥0) | `"-420"` ❌ | `"420"` ✓ |
+| Property                | Type           | Wrong       | Correct        |
+| ----------------------- | -------------- | ----------- | -------------- |
+| `FontSize.Val`          | Integer string | `"17.5"` ❌ | `"18"` ✓ (9pt) |
+| `Indentation.FirstLine` | UInt32 (≥0)    | `"-420"` ❌ | `"420"` ✓      |
+| `Indentation.Left`      | UInt32 (≥0)    | `"-420"` ❌ | `"420"` ✓      |
 
 **Negative indent solution**: Use `Hanging` property:
 
@@ -257,22 +257,22 @@ new Indentation { Hanging = "420", Left = "420" }
 
 ### Unit Conversions
 
-| Conversion | Formula |
-|------------|---------|
-| 1 inch | = 72 pt = 1440 Twips = 914400 EMU |
-| 1 pt | = 20 Twips = 12700 EMU |
-| 1 cm | ≈ 567 Twips |
-| 1 Twip | = 635 EMU |
-| FontSize Val | = pt × 2 (half-points) |
+| Conversion   | Formula                           |
+| ------------ | --------------------------------- |
+| 1 inch       | = 72 pt = 1440 Twips = 914400 EMU |
+| 1 pt         | = 20 Twips = 12700 EMU            |
+| 1 cm         | ≈ 567 Twips                       |
+| 1 Twip       | = 635 EMU                         |
+| FontSize Val | = pt × 2 (half-points)            |
 
 ### Paper Sizes (Twips)
 
-| Size | Portrait (W×H) | Landscape |
-|------|----------------|-----------|
-| A3 | 16838 × 23811 | Swap + Orient |
-| A4 | 11906 × 16838 | Swap + Orient |
-| A5 | 8391 × 11906 | Swap + Orient |
-| Letter | 12240 × 15840 | Swap + Orient |
+| Size   | Portrait (W×H) | Landscape     |
+| ------ | -------------- | ------------- |
+| A3     | 16838 × 23811  | Swap + Orient |
+| A4     | 11906 × 16838  | Swap + Orient |
+| A5     | 8391 × 11906   | Swap + Orient |
+| Letter | 12240 × 15840  | Swap + Orient |
 
 **Landscape**: `PageSize { Width=H, Height=W, Orient=PageOrientationValues.Landscape }`
 
@@ -282,30 +282,30 @@ new Indentation { Hanging = "420", Left = "420" }
 
 ### Compile Errors
 
-| Error | Cause | Solution |
-|-------|-------|----------|
-| CS1003 Chinese quotes | `""` treated as delimiter | Use `\u201c\u201d` |
-| CS0246 `SpacingBefore` | Class doesn't exist | Use `SpacingBetweenLines` |
-| CS0246 `Alignment` | Class doesn't exist | Use `Justification` |
-| CS0117 `JustificationValues.Justify` | Enum value doesn't exist | Use `.Both` |
-| CS0246 `LineSpacing` | Class doesn't exist | Use `SpacingBetweenLines` |
-| CS0246 `StrikeThrough` | Wrong class name | Use `Strike` |
+| Error                                | Cause                     | Solution                  |
+| ------------------------------------ | ------------------------- | ------------------------- |
+| CS1003 Chinese quotes                | `""` treated as delimiter | Use `\u201c\u201d`        |
+| CS0246 `SpacingBefore`               | Class doesn't exist       | Use `SpacingBetweenLines` |
+| CS0246 `Alignment`                   | Class doesn't exist       | Use `Justification`       |
+| CS0117 `JustificationValues.Justify` | Enum value doesn't exist  | Use `.Both`               |
+| CS0246 `LineSpacing`                 | Class doesn't exist       | Use `SpacingBetweenLines` |
+| CS0246 `StrikeThrough`               | Wrong class name          | Use `Strike`              |
 
 ### Schema Validation Errors
 
-| Error | Cause | Solution |
-|-------|-------|----------|
-| `'br' invalid child` | Break not inside Run | `new Run(new Break { Type = BreakValues.Page })` |
-| `bookmarkStart invalid child of pPr` | Wrong Bookmark location | Place directly in Paragraph, not in pPr |
-| `docPr id duplicates` | Hardcoded duplicate IDs | Use global counter `docPrId++` |
+| Error                                | Cause                   | Solution                                         |
+| ------------------------------------ | ----------------------- | ------------------------------------------------ |
+| `'br' invalid child`                 | Break not inside Run    | `new Run(new Break { Type = BreakValues.Page })` |
+| `bookmarkStart invalid child of pPr` | Wrong Bookmark location | Place directly in Paragraph, not in pPr          |
+| `docPr id duplicates`                | Hardcoded duplicate IDs | Use global counter `docPrId++`                   |
 
 ### Table Errors
 
-| Error | Cause | Solution |
-|-------|-------|----------|
-| Column width stretched by content | Missing `TableCellWidth` | Set `TableCellWidth { Type = Dxa }` for every cell |
-| Table skewed | `GridColumn` doesn't match `TableCellWidth` | Ensure values match |
-| Exceeds page | Total column width too large | Keep total under 9350 twips |
+| Error                             | Cause                                       | Solution                                           |
+| --------------------------------- | ------------------------------------------- | -------------------------------------------------- |
+| Column width stretched by content | Missing `TableCellWidth`                    | Set `TableCellWidth { Type = Dxa }` for every cell |
+| Table skewed                      | `GridColumn` doesn't match `TableCellWidth` | Ensure values match                                |
+| Exceeds page                      | Total column width too large                | Keep total under 9350 twips                        |
 
 ### ⚠️ Table Width Matching Rules (CRITICAL)
 
@@ -335,6 +335,7 @@ new TableCellWidth { Width = "2500", Type = TableWidthUnitValues.Pct }
 ```
 
 **Complete table example:**
+
 ```csharp
 var table = new Table();
 int[] colWidths = { 2000, 3680, 3680 };  // Total = 9360 twips
@@ -431,11 +432,13 @@ long displayHeight = displayWidth * h / w;
 **Use current source modules as API references.** Prefer `src/Core/*.cs` and `src/Templates/*.cs` for class names, property names, and constructor patterns. When writing code:
 
 ✓ Correct approach:
+
 1. Find the corresponding API pattern in `src/Core` or `src/Templates`
 2. Reference its API call structure (class names, property assignments, element ordering)
 3. Adapt content and **document structure** to match user requirements — examples are API cookbooks, not mandatory templates
 
 ❌ Wrong approach:
+
 - Recall API names from memory and write directly
 - Infer property names from "common sense"
 - Use properties not found in any code examples

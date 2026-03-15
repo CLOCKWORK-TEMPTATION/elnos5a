@@ -21,7 +21,6 @@ interface SettingsPanelProps {
   classifierOptionCount: number;
   actionBlockSpacing: string;
   hasFileImportBackend: boolean;
-  hasAgentReviewBackend: boolean;
 }
 
 export function SettingsPanel({
@@ -36,7 +35,6 @@ export function SettingsPanel({
   classifierOptionCount,
   actionBlockSpacing,
   hasFileImportBackend,
-  hasAgentReviewBackend,
 }: SettingsPanelProps): React.JSX.Element {
   const activeTypingMode = TYPING_MODE_OPTIONS.find(
     (option) => option.value === typingSystemSettings.typingSystemMode
@@ -139,15 +137,6 @@ export function SettingsPanel({
           <span>
             Backend File Extract:{" "}
             {hasFileImportBackend ? "Configured" : "Not configured"}
-          </span>
-        </div>
-        <div className="flex items-center justify-between">
-          <span
-            className={`h-2 w-2 rounded-full ${hasAgentReviewBackend ? "bg-emerald-400" : "bg-amber-400"}`}
-          />
-          <span>
-            Agent Review Route:{" "}
-            {hasAgentReviewBackend ? "Reachable by config" : "Not configured"}
           </span>
         </div>
       </div>

@@ -79,6 +79,7 @@ Follow this checklist:
 
 ```markdown
 Task Progress:
+
 - [ ] Identify the layer being changed
 - [ ] Update code in the smallest responsible module
 - [ ] Run the narrowest relevant validation

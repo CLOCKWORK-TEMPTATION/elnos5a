@@ -22,15 +22,15 @@
 
 هذه الحقول تستمر في وصف قناة `agent-review` لأنها القناة الأساسية في الـ health الحالي:
 
-| Field | Type | Meaning |
-| --- | --- | --- |
-| `reviewProvider` | `string` | المزود المهيأ/الفعلي لقناة agent-review |
-| `reviewModel` | `string` | النموذج الفعلي أو المهيأ |
-| `reviewModelRequested` | `string \| null` | القيمة الخام من env بعد التطبيع |
-| `reviewModelResolved` | `string` | النموذج بعد defaulting |
-| `reviewFallbackConfigured` | `boolean` | هل يوجد fallback model |
-| `reviewFallbackStatus` | `"idle" \| "configured" \| "active" \| "failed"` | حالة fallback الحالية |
-| `reviewLastErrorClass` | `"temporary" \| "permanent" \| null` | آخر تصنيف خطأ |
+| Field                      | Type                                             | Meaning                                 |
+| -------------------------- | ------------------------------------------------ | --------------------------------------- |
+| `reviewProvider`           | `string`                                         | المزود المهيأ/الفعلي لقناة agent-review |
+| `reviewModel`              | `string`                                         | النموذج الفعلي أو المهيأ                |
+| `reviewModelRequested`     | `string \| null`                                 | القيمة الخام من env بعد التطبيع         |
+| `reviewModelResolved`      | `string`                                         | النموذج بعد defaulting                  |
+| `reviewFallbackConfigured` | `boolean`                                        | هل يوجد fallback model                  |
+| `reviewFallbackStatus`     | `"idle" \| "configured" \| "active" \| "failed"` | حالة fallback الحالية                   |
+| `reviewLastErrorClass`     | `"temporary" \| "permanent" \| null`             | آخر تصنيف خطأ                           |
 
 ### Nested channel snapshots
 

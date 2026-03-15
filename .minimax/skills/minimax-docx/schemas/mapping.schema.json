@@ -5,10 +5,7 @@
   "description": "Schema contract for deterministic template fill/patch mapping table.",
   "type": "object",
   "additionalProperties": true,
-  "required": [
-    "schema_version",
-    "rows"
-  ],
+  "required": ["schema_version", "rows"],
   "properties": {
     "schema_version": {
       "type": "string",
@@ -29,9 +26,7 @@
       "items": {
         "type": "object",
         "additionalProperties": true,
-        "required": [
-          "id"
-        ],
+        "required": ["id"],
         "properties": {
           "id": {
             "type": "string",
@@ -53,13 +48,7 @@
       "items": {
         "type": "object",
         "additionalProperties": true,
-        "required": [
-          "id",
-          "action",
-          "selector",
-          "requirement_ids",
-          "status"
-        ],
+        "required": ["id", "action", "selector", "requirement_ids", "status"],
         "properties": {
           "id": {
             "type": "string",
@@ -67,11 +56,7 @@
           },
           "action": {
             "type": "string",
-            "enum": [
-              "replace",
-              "delete",
-              "insert"
-            ]
+            "enum": ["replace", "delete", "insert"]
           },
           "selector": {
             "type": "string",
@@ -90,12 +75,7 @@
           },
           "status": {
             "type": "string",
-            "enum": [
-              "resolved",
-              "todo",
-              "ambiguous",
-              "blocked"
-            ]
+            "enum": ["resolved", "todo", "ambiguous", "blocked"]
           },
           "notes": {
             "type": "string"

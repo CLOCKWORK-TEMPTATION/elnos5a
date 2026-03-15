@@ -108,6 +108,7 @@ involvement:
   sent to the agent in a single import operation.
 
 **Scoring algorithm**:
+
 ```
 escalationScore = 0.92 × detectorBase
                 + methodPenalty (0–14)
@@ -116,6 +117,7 @@ escalationScore = 0.92 × detectorBase
                 + suggestionBoost (6 if alternate type suggested)
                 + criticalMismatchBoost (10 if critical)
 ```
+
 Score clamped to [0, 99].
 
 **Rationale**: Deterministic layers handle >95% of lines; the AI
@@ -240,23 +242,23 @@ layer.
 
 ### Version Matrix
 
-| Component          | Version     | Notes                           |
-| ------------------ | ----------- | ------------------------------- |
-| **pnpm**           | 10.28.0     | NEVER use npm or yarn           |
-| **TypeScript**     | 5.9.3       | Strict mode, ES2022 target      |
-| **React**          | 19.2.4      | —                               |
-| **Next.js**        | 15.5.12     | App Router                      |
-| **Tiptap**         | 3.20.0      | ProseMirror foundation          |
-| **Express**        | 5.2.1       | Backend on 127.0.0.1:8787       |
-| **Vitest**         | 4.0.18      | v8 coverage provider            |
-| **Playwright**     | 1.56.1      | Chromium only                   |
-| **langchain**      | 1.2.30      | Shared multi-provider review runtime |
-| **@langchain/core** | 1.1.31     | Shared LangChain primitives     |
-| **@langchain/anthropic** | 1.3.22 | Anthropic review provider       |
-| **@langchain/openai** | 1.2.12   | OpenAI + DeepSeek-compatible transport |
-| **@langchain/google-genai** | 2.1.24 | Gemini review provider       |
-| **@mistralai/mistralai** | 1.14.1 | PDF OCR via vision            |
-| **@google/generative-ai** | 0.24.1 | Context enhancement          |
+| Component                   | Version | Notes                                  |
+| --------------------------- | ------- | -------------------------------------- |
+| **pnpm**                    | 10.28.0 | NEVER use npm or yarn                  |
+| **TypeScript**              | 5.9.3   | Strict mode, ES2022 target             |
+| **React**                   | 19.2.4  | —                                      |
+| **Next.js**                 | 15.5.12 | App Router                             |
+| **Tiptap**                  | 3.20.0  | ProseMirror foundation                 |
+| **Express**                 | 5.2.1   | Backend on 127.0.0.1:8787              |
+| **Vitest**                  | 4.0.18  | v8 coverage provider                   |
+| **Playwright**              | 1.56.1  | Chromium only                          |
+| **langchain**               | 1.2.30  | Shared multi-provider review runtime   |
+| **@langchain/core**         | 1.1.31  | Shared LangChain primitives            |
+| **@langchain/anthropic**    | 1.3.22  | Anthropic review provider              |
+| **@langchain/openai**       | 1.2.12  | OpenAI + DeepSeek-compatible transport |
+| **@langchain/google-genai** | 2.1.24  | Gemini review provider                 |
+| **@mistralai/mistralai**    | 1.14.1  | PDF OCR via vision                     |
+| **@google/generative-ai**   | 0.24.1  | Context enhancement                    |
 
 ### Conventions
 
@@ -272,13 +274,13 @@ layer.
 
 ### AI Providers
 
-| Provider                  | Purpose                              | Model Default                 |
-| ------------------------- | ------------------------------------ | ----------------------------- |
-| Configured review primary | `agent-review` via `AGENT_REVIEW_MODEL` | `anthropic:claude-sonnet-4-6` |
-| Configured review primary | `final-review` via `FINAL_REVIEW_MODEL` | `anthropic:claude-sonnet-4-6` |
-| OpenAI / Gemini / DeepSeek | Supported fallback review providers | via `*_FALLBACK_MODEL`        |
-| Mistral                   | PDF OCR via vision                   | —                             |
-| Google Gemini             | Context enhancement (SSE)            | —                             |
+| Provider                   | Purpose                                 | Model Default                 |
+| -------------------------- | --------------------------------------- | ----------------------------- |
+| Configured review primary  | `agent-review` via `AGENT_REVIEW_MODEL` | `anthropic:claude-sonnet-4-6` |
+| Configured review primary  | `final-review` via `FINAL_REVIEW_MODEL` | `anthropic:claude-sonnet-4-6` |
+| OpenAI / Gemini / DeepSeek | Supported fallback review providers     | via `*_FALLBACK_MODEL`        |
+| Mistral                    | PDF OCR via vision                      | —                             |
+| Google Gemini              | Context enhancement (SSE)               | —                             |
 
 - **API key validation**: review startup warnings MUST be provider-specific.
   `ANTHROPIC_API_KEY` keys MUST start with `sk-ant-`; `OPENAI_API_KEY`,
@@ -293,16 +295,16 @@ layer.
 
 ## API Surface
 
-| Endpoint                       | Method | Purpose                         | AI Provider      |
-| ------------------------------ | ------ | ------------------------------- | ---------------- |
-| `/health`                      | GET    | Health report with config status | —               |
-| `/api/file-extract`            | POST   | Extract text from files          | Mistral (OCR)   |
-| `/api/files/extract`           | POST   | Alias for file-extract           | Mistral (OCR)   |
-| `/api/text-extract`            | POST   | Text-only extraction             | —               |
-| `/api/agent/review`            | POST   | Classify suspicious lines (v2)   | Configured review provider |
-| `/api/final-review`            | POST   | Secondary review (Command v2)    | Configured review provider |
-| `/api/ai/context-enhance`      | POST   | Context-aware correction (SSE)   | Google Gemini    |
-| `/api/export/pdfa`             | POST   | HTML → PDF via Puppeteer         | —               |
+| Endpoint                  | Method | Purpose                          | AI Provider                |
+| ------------------------- | ------ | -------------------------------- | -------------------------- |
+| `/health`                 | GET    | Health report with config status | —                          |
+| `/api/file-extract`       | POST   | Extract text from files          | Mistral (OCR)              |
+| `/api/files/extract`      | POST   | Alias for file-extract           | Mistral (OCR)              |
+| `/api/text-extract`       | POST   | Text-only extraction             | —                          |
+| `/api/agent/review`       | POST   | Classify suspicious lines (v2)   | Configured review provider |
+| `/api/final-review`       | POST   | Secondary review (Command v2)    | Configured review provider |
+| `/api/ai/context-enhance` | POST   | Context-aware correction (SSE)   | Google Gemini              |
+| `/api/export/pdfa`        | POST   | HTML → PDF via Puppeteer         | —                          |
 
 ## System Architecture Layers
 
@@ -339,7 +341,7 @@ layer.
 - **Commits**: Conventional commits (`feat:`, `fix:`, `docs:`,
   `refactor:`, `test:`, `chore:`).
 - **Validation gate**: `pnpm validate` (format + lint + typecheck
-  + test) MUST pass before merge.
+  - test) MUST pass before merge.
 - **Code review**: All PRs MUST verify compliance with this
   constitution's principles.
 - **Spec-driven development**: Features follow the SpecKit flow

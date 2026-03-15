@@ -814,9 +814,6 @@ const resolveFinalReviewMockMode = () => {
   return null;
 };
 
-
-
-
 const buildFinalReviewMessages = (request) => {
   const systemPrompt = buildSystemPrompt(request.schemaHints);
   const userMessage = JSON.stringify({
@@ -869,7 +866,12 @@ const buildFinalReviewMeta = ({
   isMockResponse,
 });
 
-const buildFinalReviewMockResponse = (request, mockMode, startTime, modelId) => {
+const buildFinalReviewMockResponse = (
+  request,
+  mockMode,
+  startTime,
+  modelId
+) => {
   const requestId = randomUUID();
 
   if (mockMode === "error") {
@@ -892,7 +894,9 @@ const buildFinalReviewMockResponse = (request, mockMode, startTime, modelId) => 
   }
 
   const commands = request.requiredItemIds.map((itemId) => {
-    const line = request.suspiciousLines.find((entry) => entry.itemId === itemId);
+    const line = request.suspiciousLines.find(
+      (entry) => entry.itemId === itemId
+    );
     return {
       op: "relabel",
       itemId,
@@ -989,7 +993,8 @@ export const requestFinalReview = async (body) => {
 
   const configError =
     (!config.primary?.valid && config.primary?.error) ||
-    (!config.primary?.credential?.valid && config.primary?.credential?.message) ||
+    (!config.primary?.credential?.valid &&
+      config.primary?.credential?.message) ||
     null;
 
   if (configError) {
@@ -1115,8 +1120,8 @@ export const requestFinalReview = async (body) => {
         activeSpecifier: error?.specifier ?? config.resolvedSpecifier,
         usedFallback: Boolean(
           config.fallback?.usable &&
-            error?.specifier &&
-            config.fallback.specifier === error.specifier
+          error?.specifier &&
+          config.fallback.specifier === error.specifier
         ),
         fallbackReason:
           config.fallback?.usable &&
@@ -1130,7 +1135,8 @@ export const requestFinalReview = async (body) => {
           : "provider-error",
         lastErrorMessage: providerInfo.message,
         lastProviderStatusCode: providerInfo.status ?? null,
-        retryCount: typeof error?.retryCount === "number" ? error.retryCount : 0,
+        retryCount:
+          typeof error?.retryCount === "number" ? error.retryCount : 0,
         latencyMs,
         lastFailureAt: Date.now(),
       });
@@ -1185,4 +1191,3 @@ export const getFinalReviewModel = () =>
   resolveFinalReviewRuntime().resolvedModel || DEFAULT_MODEL_ID;
 
 export const getFinalReviewRuntime = () => resolveFinalReviewRuntime();
-

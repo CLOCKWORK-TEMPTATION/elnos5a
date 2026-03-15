@@ -146,13 +146,13 @@
 
 تم التحقق من هذه الإصدارات مباشرة من السجل اليوم:
 
-| Package | Verified on 2026-03-08 | Decision |
-| --- | --- | --- |
-| `langchain` | `1.2.30` | نعتمده |
-| `@langchain/core` | `1.1.31` | نعتمده |
-| `@langchain/anthropic` | `1.3.22` | نعتمده |
-| `@langchain/openai` | `1.2.12` | نعتمده |
-| `@langchain/google-genai` | `2.1.24` | نعتمده |
+| Package                   | Verified on 2026-03-08 | Decision |
+| ------------------------- | ---------------------- | -------- |
+| `langchain`               | `1.2.30`               | نعتمده   |
+| `@langchain/core`         | `1.1.31`               | نعتمده   |
+| `@langchain/anthropic`    | `1.3.22`               | نعتمده   |
+| `@langchain/openai`       | `1.2.12`               | نعتمده   |
+| `@langchain/google-genai` | `2.1.24`               | نعتمده   |
 
 ## Decision 1: استخدام نماذج المحادثة وليس الوكلاء
 
@@ -564,23 +564,23 @@
 
 ## Final Version Matrix For This Feature
 
-| Area | Latest current fact on 2026-03-08 | Chosen for this feature |
-| --- | --- | --- |
-| `Node.js` | `>=20` required by the package set | `>=20` |
-| `langchain` | `1.2.30` | `1.2.30` |
-| `@langchain/core` | `1.1.31` | `1.1.31` |
-| `@langchain/anthropic` | `1.3.22` | `1.3.22` |
-| `@langchain/openai` | `1.2.12` | `1.2.12` |
-| `@langchain/google-genai` | `2.1.24` | `2.1.24` |
-| `Anthropic latest` | `claude-opus-4-6` / `claude-sonnet-4-6` / `claude-haiku-4-5-20251001` | `claude-sonnet-4-6` |
-| `Anthropic cheaper fallback` | `claude-haiku-4-5-20251001` | `claude-haiku-4-5-20251001` |
-| `OpenAI latest frontier` | `gpt-5.4` | غير مختار افتراضيًا |
-| `OpenAI latest frontier snapshot` | `gpt-5.4-2026-03-05` | مرجع فقط |
-| `OpenAI practical fallback` | `gpt-5-mini` | `gpt-5-mini` |
-| `OpenAI practical fallback snapshot` | `gpt-5-mini-2025-08-07` | `gpt-5-mini-2025-08-07` |
-| `Gemini latest preview track` | `gemini-3.1-pro-preview` مع إيقاف `gemini-3-pro-preview` في `2026-03-09` | غير مختار |
-| `Gemini stable production track` | `gemini-2.5-flash` / `gemini-2.5-pro` | `gemini-2.5-flash` |
-| `DeepSeek current chat models` | `deepseek-chat` / `deepseek-reasoner` | `deepseek-chat` |
+| Area                                 | Latest current fact on 2026-03-08                                        | Chosen for this feature     |
+| ------------------------------------ | ------------------------------------------------------------------------ | --------------------------- |
+| `Node.js`                            | `>=20` required by the package set                                       | `>=20`                      |
+| `langchain`                          | `1.2.30`                                                                 | `1.2.30`                    |
+| `@langchain/core`                    | `1.1.31`                                                                 | `1.1.31`                    |
+| `@langchain/anthropic`               | `1.3.22`                                                                 | `1.3.22`                    |
+| `@langchain/openai`                  | `1.2.12`                                                                 | `1.2.12`                    |
+| `@langchain/google-genai`            | `2.1.24`                                                                 | `2.1.24`                    |
+| `Anthropic latest`                   | `claude-opus-4-6` / `claude-sonnet-4-6` / `claude-haiku-4-5-20251001`    | `claude-sonnet-4-6`         |
+| `Anthropic cheaper fallback`         | `claude-haiku-4-5-20251001`                                              | `claude-haiku-4-5-20251001` |
+| `OpenAI latest frontier`             | `gpt-5.4`                                                                | غير مختار افتراضيًا         |
+| `OpenAI latest frontier snapshot`    | `gpt-5.4-2026-03-05`                                                     | مرجع فقط                    |
+| `OpenAI practical fallback`          | `gpt-5-mini`                                                             | `gpt-5-mini`                |
+| `OpenAI practical fallback snapshot` | `gpt-5-mini-2025-08-07`                                                  | `gpt-5-mini-2025-08-07`     |
+| `Gemini latest preview track`        | `gemini-3.1-pro-preview` مع إيقاف `gemini-3-pro-preview` في `2026-03-09` | غير مختار                   |
+| `Gemini stable production track`     | `gemini-2.5-flash` / `gemini-2.5-pro`                                    | `gemini-2.5-flash`          |
+| `DeepSeek current chat models`       | `deepseek-chat` / `deepseek-reasoner`                                    | `deepseek-chat`             |
 
 ## Resolved Clarifications
 

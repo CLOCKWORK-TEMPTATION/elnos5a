@@ -5,7 +5,7 @@ import process from "node:process";
 const backendBaseUrl =
   process.env.E2E_BACKEND_BASE_URL || "http://127.0.0.1:18987";
 const backendExtractUrl = `${backendBaseUrl}/api/file-extract`;
-const backendReviewUrl = `${backendBaseUrl}/api/agent/review`;
+const backendReviewUrl = `${backendBaseUrl}/api/final-review`;
 const viteEntry = resolve(process.cwd(), "node_modules/vite/bin/vite.js");
 const e2eHost = process.env.E2E_HOST || "127.0.0.1";
 const e2ePort = process.env.E2E_PORT || "5174";

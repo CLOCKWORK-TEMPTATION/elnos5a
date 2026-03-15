@@ -354,7 +354,7 @@ const buildFormattedDocx = (text, _filename) => {
  * @param {string} originalFilename - اسم ملف PDF الأصلي
  * @returns {Promise<{rawPath: string, formattedPath: string}>}
  */
-export const saveProofreadscene_header_3ocx = async (
+export const saveProofreadDocx = async (
   text,
   originalFilename
 ) => {

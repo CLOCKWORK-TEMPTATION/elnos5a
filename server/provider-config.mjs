@@ -4,8 +4,6 @@ const DEFAULT_OPENAI_BASE_URL = "https://api.openai.com/v1";
 const DEFAULT_GOOGLE_BASE_URL = "https://generativelanguage.googleapis.com";
 const DEFAULT_DEEPSEEK_BASE_URL = "https://api.deepseek.com/v1";
 
-export const DEFAULT_AGENT_REVIEW_MODEL_SPECIFIER =
-  "anthropic:claude-sonnet-4-6";
 export const DEFAULT_FINAL_REVIEW_MODEL_SPECIFIER =
   "anthropic:claude-sonnet-4-6";
 export const REVIEW_PROVIDER_LIST = Object.freeze([
@@ -16,11 +14,6 @@ export const REVIEW_PROVIDER_LIST = Object.freeze([
 ]);
 
 const REVIEW_CHANNELS = Object.freeze({
-  "agent-review": {
-    primaryEnvKeys: ["AGENT_REVIEW_MODEL", "ANTHROPIC_REVIEW_MODEL"],
-    fallbackEnvKeys: ["AGENT_REVIEW_FALLBACK_MODEL"],
-    defaultModel: DEFAULT_AGENT_REVIEW_MODEL_SPECIFIER,
-  },
   "final-review": {
     primaryEnvKeys: [
       "FINAL_REVIEW_MODEL",
@@ -125,7 +118,10 @@ export const parseProviderModelSpecifier = (rawValue) => {
     // FR-001-A(د): no colon → implicit anthropic (backward compat)
     const model = raw;
     if (model.length > MAX_MODEL_LENGTH) {
-      return createInvalidModelResult(raw, `Model name exceeds ${MAX_MODEL_LENGTH} characters.`);
+      return createInvalidModelResult(
+        raw,
+        `Model name exceeds ${MAX_MODEL_LENGTH} characters.`
+      );
     }
     return {
       valid: true,
@@ -192,10 +188,7 @@ export const parseProviderModelSpecifier = (rawValue) => {
  * @param {NodeJS.ProcessEnv} [env]
  * @returns {{ valid: boolean, absent: boolean, credentialEnvKey: string | null, message: string | null, apiKey: string | null }}
  */
-export const validateProviderCredential = (
-  provider,
-  env = process.env
-) => {
+export const validateProviderCredential = (provider, env = process.env) => {
   const definition = PROVIDER_DEFINITIONS[provider];
   if (!definition) {
     return {
@@ -306,7 +299,12 @@ const enrichResolvedTarget = (parsed, role, env) => {
 };
 
 const createCredentialWarning = (target) => {
-  if (!target || !target.valid || !target.credential || target.credential.valid) {
+  if (
+    !target ||
+    !target.valid ||
+    !target.credential ||
+    target.credential.valid
+  ) {
     return null;
   }
 
@@ -323,10 +321,7 @@ const createConfigWarning = (target) => {
  * @param {NodeJS.ProcessEnv} [env]
  * @returns {{ channel: string, requestedModel: string | null, requestedFallbackModel: string | null, resolvedProvider: string | null, resolvedModel: string | null, resolvedSpecifier: string | null, primary: object, fallback: object | null, configured: boolean, fallbackConfigured: boolean, warnings: string[] }}
  */
-export const resolveReviewChannelConfig = (
-  channel,
-  env = process.env
-) => {
+export const resolveReviewChannelConfig = (channel, env = process.env) => {
   const channelDefinition = REVIEW_CHANNELS[channel];
   if (!channelDefinition) {
     throw new Error(`Unsupported review channel: ${channel}`);
@@ -439,4 +434,3 @@ export const logReviewChannelStartupWarnings = (
   }
   return config;
 };
-

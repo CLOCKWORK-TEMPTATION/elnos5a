@@ -1,4 +1,3 @@
-export * from "./Arabic-Screenplay-Classifier-Agent";
 export * from "./action";
 export * from "./arabic-patterns";
 export * from "./basmala";

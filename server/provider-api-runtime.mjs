@@ -111,7 +111,9 @@ const buildConfiguredReviewSnapshot = (channel, env = process.env) => {
     fallbackRequestedModel: config.requestedFallbackModel,
     fallbackProvider: config.fallback?.valid ? config.fallback.provider : null,
     fallbackModel: config.fallback?.valid ? config.fallback.model : null,
-    fallbackSpecifier: config.fallback?.valid ? config.fallback.specifier : null,
+    fallbackSpecifier: config.fallback?.valid
+      ? config.fallback.specifier
+      : null,
     fallbackConfigured: Boolean(config.fallbackConfigured),
     configured: Boolean(config.configured),
     credentialWarnings: [...config.warnings],
@@ -145,7 +147,8 @@ export const getReviewRuntimeSnapshot = (channel, env = process.env) => {
 
   const configChanged =
     existingSnapshot.requestedModel !== baseSnapshot.requestedModel ||
-    existingSnapshot.fallbackRequestedModel !== baseSnapshot.fallbackRequestedModel ||
+    existingSnapshot.fallbackRequestedModel !==
+      baseSnapshot.fallbackRequestedModel ||
     existingSnapshot.resolvedSpecifier !== baseSnapshot.resolvedSpecifier ||
     existingSnapshot.fallbackSpecifier !== baseSnapshot.fallbackSpecifier;
 
@@ -202,6 +205,5 @@ export const updateReviewRuntimeSnapshot = (
 };
 
 export const getAllReviewRuntimeSnapshots = (env = process.env) => ({
-  agentReview: getReviewRuntimeSnapshot("agent-review", env),
   finalReview: getReviewRuntimeSnapshot("final-review", env),
 });

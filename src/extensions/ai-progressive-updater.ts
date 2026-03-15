@@ -26,7 +26,7 @@ import { logger } from "../utils/logger";
 // ─── الأنواع ──────────────────────────────────────────────────────
 
 /** مصدر طبقة AI */
-export type AILayerSource = "gemini-context" | "claude-review";
+export type AILayerSource = "gemini-context" | "final-review";
 
 /** أمر تصحيح واحد من أي طبقة AI */
 export interface AICorrectionCommand {
@@ -81,7 +81,7 @@ export interface ProgressiveUpdateSessionOptions {
 const DEFAULT_MIN_CONFIDENCE = 0.6;
 
 const DEFAULT_LAYER_PRIORITY: readonly AILayerSource[] = [
-  "claude-review",
+  "final-review",
   "gemini-context",
 ];
 

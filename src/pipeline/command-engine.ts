@@ -12,8 +12,8 @@ import type {
   AgentCommand,
   RelabelCommand,
   SplitCommand,
-  AgentReviewResponsePayload,
-} from "../types/agent-review";
+  FinalReviewResponsePayload,
+} from "../types/final-review";
 import type { LineType } from "../types/screenplay";
 import type { ItemSnapshot } from "./fingerprint";
 import { computeFingerprint } from "./fingerprint";
@@ -145,7 +145,7 @@ export type DiscardReason = "stale_discarded" | "idempotent_discarded" | null;
  * فحص ما إذا كانت الاستجابة قديمة أو مكررة.
  */
 export const checkResponseValidity = (
-  response: AgentReviewResponsePayload,
+  response: FinalReviewResponsePayload,
   state: ImportOperationState
 ): DiscardReason => {
   // فحص stale
@@ -291,7 +291,7 @@ export interface BatchApplyResult {
  * 4) التحقق الفردي وتطبيق كل أمر
  */
 export const applyCommandBatch = async (
-  response: AgentReviewResponsePayload,
+  response: FinalReviewResponsePayload,
   state: ImportOperationState,
   items: Map<string, EditorItem>,
   generateId: () => string

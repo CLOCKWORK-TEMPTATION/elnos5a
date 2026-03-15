@@ -129,7 +129,7 @@ export interface SuspiciousLine {
 }
 
 /**
- * حزمة مراجعة AI — تُرسل إلى نقطة نهاية `/api/agent/review`.
+ * حزمة مراجعة AI — تُرسل إلى نقطة نهاية `/api/final-review`.
  *
  * تحتوي على الأسطر المشبوهة فقط (عتبة: suspicion ≥ 74 مع ≥ 2 نتائج).
  * `suspicionRate` = نسبة الأسطر المشبوهة من إجمالي الأسطر المراجعة.
